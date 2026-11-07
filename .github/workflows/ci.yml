@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  RUST_TOOLCHAIN: "1.91.0"
+  NODE_VERSION: "22"
+  CARGO_TERM_COLOR: never
+
+jobs:
+  # ---- Front-end: types, unit tests, production build, and the browser-level end-to-end test (Chromium on Linux) ----
+  web:
+    name: Web UI (typecheck, unit tests, browser e2e)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install playwright==1.49.0 && python -m playwright install --with-deps chromium
+      - name: Browser end-to-end test
+        run: |
+          mkdir -p shots
+          npx vite preview --port 4173 > preview.log 2>&1 &
+          sleep 4
+          python scripts/e2e_browser.py http://localhost:4173/ shots | tee e2e.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: browser-preview-results, path: "shots/\ne2e.log" }
+
+  # ---- Platform-independent Rust core on Linux (fast feedback) ----
+  core:
+    name: Rust core (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p pinboard-core --locked
+
+  # ---- The real thing: build, test and package on Windows ----
+  windows:
+    name: Windows x64 (build, native tests, installer, portable, smoke)
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "${{ env.NODE_VERSION }}", cache: npm }
+      - uses: dtolnay/rust-toolchain@1.91.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Show toolchain and display
+        shell: powershell
+        run: |
+          rustc --version; cargo --version; node --version
+          Add-Type -AssemblyName System.Windows.Forms
+          [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { "{0} {1}x{2} primary={3}" -f $_.DeviceName, $_.Bounds.Width, $_.Bounds.Height, $_.Primary }
+          Get-ItemProperty 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}' -ErrorAction SilentlyContinue | Select-Object pv
+      - run: npm ci
+        shell: bash
+      - name: Front-end unit tests
+        shell: bash
+        run: npm test
+      - name: Build front-end (tauri::generate_context! embeds ../dist at compile time)
+        shell: bash
+        run: npm run build
+      - name: Rust tests (core + app + real Windows clipboard/monitor integration tests)
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          set -o pipefail
+          cargo test --workspace --locked -- --test-threads=1 2>&1 | tee artifacts/rust-tests.log
+      - name: Build installer and executable
+        shell: bash
+        run: |
+          set -o pipefail
+          npx tauri build --ci 2>&1 | tee artifacts/tauri-build.log
+      - name: Locate build outputs
+        shell: bash
+        run: |
+          ls -la target/release/*.exe target/release/bundle/nsis/ || true
+          SETUP=$(ls target/release/bundle/nsis/*-setup.exe | head -n 1)
+          echo "SETUP=$SETUP" >> "$GITHUB_ENV"
+          test -f target/release/mypinboard.exe
+      - name: Assemble portable build
+        shell: bash
+        run: |
+          P=dist-portable/MyPinboard-Portable-x64
+          mkdir -p "$P"
+          cp target/release/mypinboard.exe "$P/MyPinboard.exe"
+          : > "$P/portable.flag"
+          printf 'MyPinboard portable\n\nRun MyPinboard.exe. All data is kept in the "data" folder next to it (portable.flag enables this).\nRequires the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11 and current Windows 10).\n' > "$P/README.txt"
+          cp LICENSE "$P/LICENSE"
+          echo "PORTABLE_EXE=$PWD/$P/MyPinboard.exe" >> "$GITHUB_ENV"
+      - name: Verify architecture of the executable
+        shell: powershell
+        run: |
+          $b = [IO.File]::ReadAllBytes("$env:PORTABLE_EXE"); $pe = [BitConverter]::ToInt32($b, 0x3C); $m = [BitConverter]::ToUInt16($b, $pe + 4)
+          "Machine type: 0x{0:x}" -f $m; if ($m -ne 0x8664) { throw "not an x64 executable" }
+          (Get-Item "$env:PORTABLE_EXE").Length / 1MB | ForEach-Object { "Executable size: {0:N1} MB" -f $_ }
+      - name: Smoke test on real Windows (portable build)
+        shell: powershell
+        run: ./scripts/smoke-windows.ps1 -Exe "$env:PORTABLE_EXE" -OutDir "$PWD/artifacts/smoke"
+      - name: Installer test (silent install, run, uninstall)
+        shell: powershell
+        run: ./scripts/test-installer.ps1 -Setup "$PWD/$env:SETUP" -OutDir "$PWD/artifacts/installer"
+      - name: Collect
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p out
+          cp "$SETUP" out/MyPinboard-Setup-x64.exe 2>/dev/null || true
+          cp -r dist-portable out/ 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: windows-test-results, path: artifacts/ }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: MyPinboard-Setup-x64, path: out/MyPinboard-Setup-x64.exe, if-no-files-found: warn }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: MyPinboard-Portable-x64, path: out/dist-portable/, if-no-files-found: warn }

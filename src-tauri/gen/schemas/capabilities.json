@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"UI windows: invoke our own commands and listen to backend events. Everything native goes through audited Rust commands.","local":true,"windows":["handle","board"],"permissions":["core:default"]}}

@@ -1,0 +1,4 @@
+# Used only for the Linux-sandbox type-check of the Windows code (see scripts/check-windows.sh). CI builds natively on Windows.
+[target.x86_64-pc-windows-gnu]
+linker = "x86_64-w64-mingw32-gcc"
+ar = "x86_64-w64-mingw32-ar"

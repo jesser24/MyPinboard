@@ -1,0 +1,17 @@
+[package]
+name = "pinboard-core"
+version = "1.0.0"
+edition = "2021"
+license = "MIT"
+description = "Platform-independent core of MyPinboard: model, SQLite storage, capture rules, window geometry."
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
