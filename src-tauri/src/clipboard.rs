@@ -85,28 +85,55 @@ mod imp {
         bmp_to_png(&dib_to_bmp(dib)?)
     }
 
-    /// Reads the current clipboard. Priority: files > text > registered PNG > DIB/DIBV5 > CF_BITMAP.
+    /// Try a DIB clipboard format and decode it. Availability alone is not
+    /// enough: Windows may advertise CF_DIBV5 while its payload cannot be read
+    /// or decoded by this path, so callers must still try CF_DIB afterwards.
+    fn read_dib_format(format: u32) -> Option<Vec<u8>> {
+        if !is_format_avail(format) {
+            return None;
+        }
+        get_clipboard::<Vec<u8>, _>(formats::RawData(format))
+            .ok()
+            .and_then(|bytes| dib_to_png(&bytes))
+    }
+
+    /// Reads the current clipboard. Priority: files > text > DIBV5 > DIB > PNG > bitmap.
     pub fn read_now() -> Snapshot {
         let source = crate::platform::clipboard_owner_app();
         if marked_private() { return Snapshot { data: None, source_app: source, excluded_by_source: true }; }
+
         let data = if is_format_avail(formats::CF_HDROP) {
             get_clipboard::<Vec<String>, _>(formats::FileList).ok().filter(|v| !v.is_empty()).map(ClipData::Files)
         } else if is_format_avail(formats::CF_UNICODETEXT) {
             get_clipboard::<String, _>(formats::Unicode).ok().map(ClipData::Text)
-        // Prefer the standard Windows DIB formats over the registered "PNG"
-        // clipboard format. Some clipboard providers advertise a registered PNG
-        // format but do not expose its payload through GetClipboardData in the
-        // same way as ordinary global-memory formats. Falling through to DIB
-        // keeps image capture interoperable with native Windows applications.
-        } else if is_format_avail(formats::CF_DIBV5) {
-            get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIBV5)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
-        } else if is_format_avail(formats::CF_DIB) {
-            get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIB)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
-        } else if let Some(id) = png_fmt().filter(|id| is_format_avail(*id)) {
-            get_clipboard::<Vec<u8>, _>(formats::RawData(id)).ok().map(ClipData::Png)
-        } else if is_format_avail(formats::CF_BITMAP) {
-            get_clipboard::<Vec<u8>, _>(formats::Bitmap).ok().and_then(|b| bmp_to_png(&b)).map(ClipData::Png)
-        } else { None };
+        } else {
+            // Do not use an `else if` chain for image formats. A format can be
+            // advertised by Windows even when reading or decoding its payload
+            // fails. In particular, CF_DIBV5 can be present while CF_DIB is
+            // perfectly readable. Each failed attempt must fall through.
+            let dib_image = read_dib_format(formats::CF_DIBV5)
+                .or_else(|| read_dib_format(formats::CF_DIB));
+
+            let png_image = || {
+                png_fmt()
+                    .filter(|id| is_format_avail(*id))
+                    .and_then(|id| get_clipboard::<Vec<u8>, _>(formats::RawData(id)).ok())
+            };
+
+            dib_image
+                .or_else(png_image)
+                .or_else(|| {
+                    if is_format_avail(formats::CF_BITMAP) {
+                        get_clipboard::<Vec<u8>, _>(formats::Bitmap)
+                            .ok()
+                            .and_then(|bytes| bmp_to_png(&bytes))
+                    } else {
+                        None
+                    }
+                })
+                .map(ClipData::Png)
+        };
+
         Snapshot { data, source_app: source, excluded_by_source: false }
     }
 
