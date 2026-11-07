@@ -41,7 +41,51 @@ mod imp {
         let mut out = Vec::new(); img.write_to(&mut Cursor::new(&mut out), image::ImageFormat::Png).ok()?; Some(out)
     }
 
-    /// Reads the current clipboard. Priority: files (CF_HDROP) > text (CF_UNICODETEXT) > image (registered "PNG", else CF_BITMAP).
+    /// Wraps a CF_DIB/CF_DIBV5 payload in the 14-byte BMP file header expected by
+    /// the `image` decoder. A DIB starts at BITMAPINFOHEADER and has no file header.
+    fn dib_to_bmp(dib: &[u8]) -> Option<Vec<u8>> {
+        if dib.len() < 40 { return None; }
+        let u16_at = |offset: usize| -> Option<u16> {
+            Some(u16::from_le_bytes(dib.get(offset..offset + 2)?.try_into().ok()?))
+        };
+        let u32_at = |offset: usize| -> Option<u32> {
+            Some(u32::from_le_bytes(dib.get(offset..offset + 4)?.try_into().ok()?))
+        };
+        let header_size = u32_at(0)? as usize;
+        if header_size < 40 || header_size > dib.len() { return None; }
+        let bit_count = u16_at(14)?;
+        let compression = u32_at(16)?;
+        let colors_used = u32_at(32)? as usize;
+        // BITMAPINFOHEADER stores BI_BITFIELDS masks after its 40-byte header.
+        // V4/V5 headers include those masks in the header itself.
+        let masks_size = if header_size == 40 {
+            match compression { 3 => 12, 6 => 16, _ => 0 }
+        } else { 0 };
+        let palette_entries = if bit_count <= 8 {
+            if colors_used != 0 { colors_used } else { 1usize << bit_count }
+        } else { 0 };
+        let pixel_offset = 14usize
+            .checked_add(header_size)?
+            .checked_add(masks_size)?
+            .checked_add(palette_entries.checked_mul(4)?)?;
+        if pixel_offset > 14usize.checked_add(dib.len())? { return None; }
+        let file_size = 14usize.checked_add(dib.len())?;
+        let file_size = u32::try_from(file_size).ok()?;
+        let pixel_offset = u32::try_from(pixel_offset).ok()?;
+        let mut bmp = Vec::with_capacity(file_size as usize);
+        bmp.extend_from_slice(b"BM");
+        bmp.extend_from_slice(&file_size.to_le_bytes());
+        bmp.extend_from_slice(&[0; 4]);
+        bmp.extend_from_slice(&pixel_offset.to_le_bytes());
+        bmp.extend_from_slice(dib);
+        Some(bmp)
+    }
+
+    fn dib_to_png(dib: &[u8]) -> Option<Vec<u8>> {
+        bmp_to_png(&dib_to_bmp(dib)?)
+    }
+
+    /// Reads the current clipboard. Priority: files > text > registered PNG > DIB/DIBV5 > CF_BITMAP.
     pub fn read_now() -> Snapshot {
         let source = crate::platform::clipboard_owner_app();
         if marked_private() { return Snapshot { data: None, source_app: source, excluded_by_source: true }; }
@@ -51,7 +95,11 @@ mod imp {
             get_clipboard::<String, _>(formats::Unicode).ok().map(ClipData::Text)
         } else if let Some(id) = png_fmt().filter(|id| is_format_avail(*id)) {
             get_clipboard::<Vec<u8>, _>(formats::RawData(id)).ok().map(ClipData::Png)
-        } else if is_format_avail(formats::CF_BITMAP) || is_format_avail(formats::CF_DIB) || is_format_avail(formats::CF_DIBV5) {
+        } else if is_format_avail(formats::CF_DIBV5) {
+            get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIBV5)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
+        } else if is_format_avail(formats::CF_DIB) {
+            get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIB)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
+        } else if is_format_avail(formats::CF_BITMAP) {
             get_clipboard::<Vec<u8>, _>(formats::Bitmap).ok().and_then(|b| bmp_to_png(&b)).map(ClipData::Png)
         } else { None };
         Snapshot { data, source_app: source, excluded_by_source: false }
@@ -76,8 +124,19 @@ mod imp {
                 Kind::Text | Kind::Url => formats::Unicode.write_clipboard(&item.content).map_err(|e| e.to_string())?,
                 Kind::File | Kind::Folder | Kind::Group => { let paths: Vec<&str> = item.content.lines().map(str::trim).filter(|l| !l.is_empty()).collect(); formats::FileList.write_clipboard(&paths[..]).map_err(|e| e.to_string())?; }
                 Kind::Image => {
-                    if let (Some(id), Some(p)) = (png_fmt(), &png_bytes) { formats::RawData(id).write_clipboard(p).map_err(|e| e.to_string())?; }
-                    if let Some(b) = &bmp { formats::Bitmap.write_clipboard(b).map_err(|e| e.to_string())?; }
+                    if let (Some(id), Some(p)) = (png_fmt(), &png_bytes) {
+                        formats::RawData(id).write_clipboard(p).map_err(|e| format!("write PNG clipboard format: {e}"))?;
+                    }
+                    // Publish the interoperable CF_DIB representation. `formats::Bitmap`
+                    // uses CF_BITMAP/HBITMAP and delegates to GDI's CreateDIBitmap; that
+                    // path can fail with ERROR_SUCCESS on some Windows runners. CF_DIB is
+                    // a movable memory block containing BITMAPINFOHEADER + pixel bytes.
+                    if let Some(b) = &bmp {
+                        let dib = b.get(14..).ok_or("generated BMP is missing its file header")?;
+                        formats::RawData(formats::CF_DIB)
+                            .write_clipboard(&dib)
+                            .map_err(|e| format!("write CF_DIB clipboard format: {e}"))?;
+                    }
                 }
             }
         }

@@ -57,6 +57,10 @@ fn image_survives_write_then_capture_and_is_not_recaptured_as_ours() {
     assert_eq!(stored.kind, Kind::Image);
     clipboard::write_item(&stored, &imgs).expect("write image to clipboard"); settle();
     assert!(clipboard::is_self_write(), "our own write must be recognised so it is never re-captured");
+    assert!(clipboard_win::is_format_avail(formats::CF_DIB), "image write must publish a standard CF_DIB fallback");
+    let dib = clipboard_win::get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIB)).expect("read CF_DIB fallback");
+    assert!(dib.len() > 40, "CF_DIB must contain a BITMAPINFOHEADER and pixel data");
+    assert_eq!(u32::from_le_bytes(dib[..4].try_into().unwrap()), 40, "generated CF_DIB should use a 40-byte BITMAPINFOHEADER");
     match clipboard::read_now().data { Some(ClipData::Png(bytes)) => { let img = image::load_from_memory(&bytes).expect("decodes"); assert_eq!((img.width(), img.height()), (4, 4)); } _ => panic!("expected image") }
     set_clipboard_string(&unique("other")).unwrap(); settle();
     assert!(!clipboard::is_self_write(), "a copy made by another program is not ours");
