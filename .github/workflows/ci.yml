@@ -103,13 +103,15 @@ jobs:
           : > "$P/portable.flag"
           printf 'MyPinboard portable\n\nRun MyPinboard.exe. All data is kept in the "data" folder next to it (portable.flag enables this).\nRequires the Microsoft Edge WebView2 Runtime (preinstalled on Windows 11 and current Windows 10).\n' > "$P/README.txt"
           cp LICENSE "$P/LICENSE"
-          echo "PORTABLE_EXE=$PWD/$P/MyPinboard.exe" >> "$GITHUB_ENV"
       - name: Verify architecture of the executable
         shell: powershell
         run: |
-          $b = [IO.File]::ReadAllBytes("$env:PORTABLE_EXE"); $pe = [BitConverter]::ToInt32($b, 0x3C); $m = [BitConverter]::ToUInt16($b, $pe + 4)
+          $portableExe = Join-Path $PWD 'dist-portable\MyPinboard-Portable-x64\MyPinboard.exe'
+          if (-not (Test-Path -LiteralPath $portableExe -PathType Leaf)) { throw "Portable executable not found: $portableExe" }
+          "PORTABLE_EXE=$portableExe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $b = [IO.File]::ReadAllBytes($portableExe); $pe = [BitConverter]::ToInt32($b, 0x3C); $m = [BitConverter]::ToUInt16($b, $pe + 4)
           "Machine type: 0x{0:x}" -f $m; if ($m -ne 0x8664) { throw "not an x64 executable" }
-          (Get-Item "$env:PORTABLE_EXE").Length / 1MB | ForEach-Object { "Executable size: {0:N1} MB" -f $_ }
+          (Get-Item -LiteralPath $portableExe).Length / 1MB | ForEach-Object { "Executable size: {0:N1} MB" -f $_ }
       - name: Smoke test on real Windows (portable build)
         shell: powershell
         run: ./scripts/smoke-windows.ps1 -Exe "$env:PORTABLE_EXE" -OutDir "$PWD/artifacts/smoke"
