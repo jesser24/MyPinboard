@@ -47,8 +47,15 @@ export function NativeBoard({ backend }: { backend: TauriBackend }) {
     const busyFn = (e: Event) => { busy.current += (e as CustomEvent<number>).detail; };
     const resize = () => setSize({ width: innerWidth, height: innerHeight });
     const paste = (e: ClipboardEvent) => { if ((e.target as HTMLElement).closest("input,textarea")) return; e.preventDefault(); void backend.captureClipboard().catch((err) => showToast(String(err))); };
-    addEventListener("pb-busy", busyFn); addEventListener("resize", resize); addEventListener("paste", paste);
-    return () => { offs.forEach((p) => p.then((f) => f())); removeEventListener("pb-busy", busyFn); removeEventListener("resize", resize); removeEventListener("paste", paste); };
+    // Escape is handled in the native board webview (not just the browser preview).
+    const keydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && phaseRef.current !== "hidden" && phaseRef.current !== "closing") {
+        e.preventDefault();
+        closeUi();
+      }
+    };
+    addEventListener("pb-busy", busyFn); addEventListener("resize", resize); addEventListener("paste", paste); addEventListener("keydown", keydown);
+    return () => { offs.forEach((p) => p.then((f) => f())); removeEventListener("pb-busy", busyFn); removeEventListener("resize", resize); removeEventListener("paste", paste); removeEventListener("keydown", keydown); };
   }, [openUi, closeUi, backend, showToast]);
 
   const dens = useMemo(() => densityOf(size), [size]);

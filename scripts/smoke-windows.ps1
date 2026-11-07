@@ -21,11 +21,19 @@ public static class Win {
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  // DWMWA_EXTENDED_FRAME_BOUNDS (9) reports the visible frame, excluding
+  // invisible resize borders and the extra bounds used by GetWindowRect.
+  public static RECT VisibleRect(IntPtr h) {
+    RECT r;
+    if (DwmGetWindowAttribute(h, 9, out r, Marshal.SizeOf(typeof(RECT))) == 0) return r;
+    GetWindowRect(h, out r); return r;
+  }
   public static List<string> Windows(uint[] pids) {
     var res = new List<string>();
     EnumWindows((h, l) => { uint pid; GetWindowThreadProcessId(h, out pid);
-      if (Array.IndexOf(pids, pid) >= 0) { var sb = new StringBuilder(256); GetWindowText(h, sb, 256); RECT r; GetWindowRect(h, out r);
+      if (Array.IndexOf(pids, pid) >= 0) { var sb = new StringBuilder(256); GetWindowText(h, sb, 256); RECT r = VisibleRect(h);
         res.Add(sb.ToString() + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + r.Left + "," + r.Top + "," + r.Right + "," + r.Bottom); }
       return true; }, IntPtr.Zero);
     return res; }
