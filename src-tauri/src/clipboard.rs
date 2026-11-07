@@ -93,12 +93,17 @@ mod imp {
             get_clipboard::<Vec<String>, _>(formats::FileList).ok().filter(|v| !v.is_empty()).map(ClipData::Files)
         } else if is_format_avail(formats::CF_UNICODETEXT) {
             get_clipboard::<String, _>(formats::Unicode).ok().map(ClipData::Text)
-        } else if let Some(id) = png_fmt().filter(|id| is_format_avail(*id)) {
-            get_clipboard::<Vec<u8>, _>(formats::RawData(id)).ok().map(ClipData::Png)
+        // Prefer the standard Windows DIB formats over the registered "PNG"
+        // clipboard format. Some clipboard providers advertise a registered PNG
+        // format but do not expose its payload through GetClipboardData in the
+        // same way as ordinary global-memory formats. Falling through to DIB
+        // keeps image capture interoperable with native Windows applications.
         } else if is_format_avail(formats::CF_DIBV5) {
             get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIBV5)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
         } else if is_format_avail(formats::CF_DIB) {
             get_clipboard::<Vec<u8>, _>(formats::RawData(formats::CF_DIB)).ok().and_then(|b| dib_to_png(&b)).map(ClipData::Png)
+        } else if let Some(id) = png_fmt().filter(|id| is_format_avail(*id)) {
+            get_clipboard::<Vec<u8>, _>(formats::RawData(id)).ok().map(ClipData::Png)
         } else if is_format_avail(formats::CF_BITMAP) {
             get_clipboard::<Vec<u8>, _>(formats::Bitmap).ok().and_then(|b| bmp_to_png(&b)).map(ClipData::Png)
         } else { None };

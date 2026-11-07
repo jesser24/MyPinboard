@@ -66,7 +66,21 @@ fn image_survives_write_then_capture_and_is_not_recaptured_as_ours() {
         "CF_DIB must start with a complete BITMAPINFOHEADER, BITMAPV4HEADER, or BITMAPV5HEADER; got header size {dib_header_size} in {} bytes",
         dib.len()
     );
-    match clipboard::read_now().data { Some(ClipData::Png(bytes)) => { let img = image::load_from_memory(&bytes).expect("decodes"); assert_eq!((img.width(), img.height()), (4, 4)); } _ => panic!("expected image") }
+    let snapshot = clipboard::read_now();
+    match snapshot.data {
+        Some(ClipData::Png(bytes)) => {
+            let img = image::load_from_memory(&bytes).expect("captured image must decode");
+            assert_eq!((img.width(), img.height()), (4, 4));
+        }
+        Some(_) => panic!("clipboard returned a non-image payload"),
+        None => panic!(
+            "expected image from clipboard; excluded_by_source={}; CF_DIB={} CF_DIBV5={} PNG={}",
+            snapshot.excluded_by_source,
+            clipboard_win::is_format_avail(formats::CF_DIB),
+            clipboard_win::is_format_avail(formats::CF_DIBV5),
+            register_format("PNG").map(|id| clipboard_win::is_format_avail(id.get())).unwrap_or(false),
+        ),
+    }
     set_clipboard_string(&unique("other")).unwrap(); settle();
     assert!(!clipboard::is_self_write(), "a copy made by another program is not ours");
     std::fs::remove_dir_all(&imgs).ok();
