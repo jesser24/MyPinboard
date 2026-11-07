@@ -16,11 +16,20 @@ fn set_rect(w: &WebviewWindow, r: PRect) {
     let _ = w.set_position(Position::Physical(PhysicalPosition::new(r.x, r.y)));
     let _ = w.set_size(Size::Physical(PhysicalSize::new(r.w.max(1) as u32, r.h.max(1) as u32)));
 }
-/// Moving a window across monitors with different DPI makes Windows propose its own size; re-assert ours once the move settled.
-fn set_rect_settled(w: &WebviewWindow, r: PRect) {
+/// Place `w` at `r`. With `fit` (the board, which has invisible shadow borders) the window is positioned with `SetWindowPos` so that its *visible*
+/// frame is exactly `r`; `set_rect` is only the fallback, because Tauri's setters are asynchronous and would overwrite the corrected position.
+fn set_rect_fit(w: &WebviewWindow, r: PRect, fit: bool) {
+    if fit && platform::fit_visible_rect(w, r.x, r.y, r.w, r.h) { return; }
     set_rect(w, r);
+}
+/// Moving a window across monitors with different DPI makes Windows propose its own size; re-assert ours once the move settled.
+fn set_rect_settled(w: &WebviewWindow, r: PRect, fit: bool) {
+    set_rect_fit(w, r, fit);
     let w2 = w.clone();
-    std::thread::spawn(move || { std::thread::sleep(Duration::from_millis(70)); set_rect(&w2, r); });
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(70)); set_rect_fit(&w2, r, fit);
+        if fit { std::thread::sleep(Duration::from_millis(230)); let _ = platform::fit_visible_rect(&w2, r.x, r.y, r.w, r.h); }
+    });
 }
 
 pub fn current_placement(app: &AppHandle) -> (Placement, Vec<MonitorInfo>) {
@@ -41,7 +50,7 @@ pub fn emit_placement(app: &AppHandle, p: &Placement) { let _ = app.emit("placem
 pub fn place_handle(app: &AppHandle) {
     let Some(w) = app.get_webview_window(HANDLE) else { return };
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(&w, handle_window_rect(&p, m)); emit_placement(app, &p); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(&w, handle_window_rect(&p, m), false); emit_placement(app, &p); }
 }
 
 pub fn ensure_handle(app: &AppHandle) -> Result<WebviewWindow, String> {
@@ -75,8 +84,15 @@ pub fn schedule_display_refresh(app: &AppHandle) {
 
 fn place_board(app: &AppHandle, w: &WebviewWindow) {
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect(&p, m)); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect(&p, m), true); }
 }
+/// Re-fit the board's visible frame without moving it first (the frame can only be measured reliably once the window is shown).
+fn fit_board(app: &AppHandle, w: &WebviewWindow) {
+    let (p, mons) = current_placement(app);
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { let r = board_rect(&p, m); let _ = platform::fit_visible_rect(w, r.x, r.y, r.w, r.h); }
+}
+/// Give the board the real OS keyboard focus (needed for Escape and typing), even when another app is in the foreground.
+fn focus_board(w: &WebviewWindow) { let _ = w.set_focus(); platform::focus_window(w); }
 
 pub fn refresh_backdrop(app: &AppHandle) { if let Some(w) = app.get_webview_window(BOARD) { apply_backdrop(app, &w); } }
 
@@ -115,7 +131,8 @@ fn create_board(app: &AppHandle) -> Result<WebviewWindow, String> {
 fn place_and_show(app: &AppHandle, w: &WebviewWindow, focus: bool) {
     place_board(app, w);
     let _ = w.show();
-    if focus { let _ = w.set_focus(); }
+    fit_board(app, w);
+    if focus { focus_board(w); }
     st(app).board_open.store(true, SeqCst);
     let _ = app.emit("board-visibility", true);
     let _ = app.emit_to(BOARD, "board-show", ());
@@ -127,7 +144,7 @@ pub fn show_board(app: &AppHandle, focus: bool) {
     s.close_gen.fetch_add(1, SeqCst);
     match app.get_webview_window(BOARD) {
         Some(w) => {
-            if s.board_open.load(SeqCst) { if focus { let _ = w.set_focus(); } return; }
+            if s.board_open.load(SeqCst) { if focus { focus_board(&w); } return; }
             place_and_show(app, &w, focus);
         }
         None => {

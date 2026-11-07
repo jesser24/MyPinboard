@@ -33,11 +33,16 @@ export function NativeBoard({ backend }: { backend: TauriBackend }) {
     go("closing"); timers.current.push(window.setTimeout(() => { go("hidden"); void invoke("hide_board"); }, dur + 30));
   }, [dur]);
 
+  // `store` is a new object on every render, so openUi/closeUi change identity constantly. The listeners below call them through refs so this effect
+  // subscribes exactly once per mount instead of tearing down and re-registering every native listener (asynchronously) after each render.
+  const openRef = useRef(openUi); const closeRef = useRef(closeUi); const hasSnap = useRef(false);
+  openRef.current = openUi; closeRef.current = closeUi; hasSnap.current = store.snap !== null;
+
   useEffect(() => {
     const offs: Promise<() => void>[] = [];
-    offs.push(listen("board-show", openUi));
-    offs.push(listen("board-close", closeUi));
-    offs.push(listen("board-blur", () => { if (busy.current <= 0) closeUi(); }));
+    offs.push(listen("board-show", () => openRef.current()));
+    offs.push(listen("board-close", () => closeRef.current()));
+    offs.push(listen("board-blur", () => { if (busy.current <= 0) closeRef.current(); }));
     offs.push(listen<boolean>("drop-state", (e) => setDropping(e.payload)));
     offs.push(listen<{ edge: Edge }>("placement", (e) => setEdge(e.payload.edge)));
     offs.push(listen<Settings>("settings-changed", (e) => applySettings(e.payload)));
@@ -47,16 +52,18 @@ export function NativeBoard({ backend }: { backend: TauriBackend }) {
     const busyFn = (e: Event) => { busy.current += (e as CustomEvent<number>).detail; };
     const resize = () => setSize({ width: innerWidth, height: innerHeight });
     const paste = (e: ClipboardEvent) => { if ((e.target as HTMLElement).closest("input,textarea")) return; e.preventDefault(); void backend.captureClipboard().catch((err) => showToast(String(err))); };
-    // Escape is handled in the native board webview (not just the browser preview).
+    // Escape: once the snapshot is loaded, <Board> owns it and closes the innermost layer first (dialog → settings → search text → board), and the
+    // context menu swallows it in the capture phase. A second unconditional close here would defeat those layers (it closed the whole board with a
+    // dialog open), so this listener is only the safety net while <Board> is not mounted yet.
     const keydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && phaseRef.current !== "hidden" && phaseRef.current !== "closing") {
-        e.preventDefault();
-        closeUi();
-      }
+      if (e.key !== "Escape" || e.defaultPrevented || hasSnap.current) return;
+      if (phaseRef.current === "hidden" || phaseRef.current === "closing") return;
+      e.preventDefault();
+      closeRef.current();
     };
     addEventListener("pb-busy", busyFn); addEventListener("resize", resize); addEventListener("paste", paste); addEventListener("keydown", keydown);
     return () => { offs.forEach((p) => p.then((f) => f())); removeEventListener("pb-busy", busyFn); removeEventListener("resize", resize); removeEventListener("paste", paste); removeEventListener("keydown", keydown); };
-  }, [openUi, closeUi, backend, showToast]);
+  }, [backend, showToast]);
 
   const dens = useMemo(() => densityOf(size), [size]);
   if (!store.snap) return null;

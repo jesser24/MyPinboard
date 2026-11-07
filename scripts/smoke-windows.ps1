@@ -21,6 +21,13 @@ public static class Win {
   [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool BringWindowToTop(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr SetFocus(IntPtr h);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool attach);
+  [DllImport("kernel32.dll")] public static extern uint GetCurrentThreadId();
   [DllImport("dwmapi.dll")] public static extern int DwmGetWindowAttribute(IntPtr h, int attr, out RECT r, int size);
   [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
   // DWMWA_EXTENDED_FRAME_BOUNDS (9) reports the visible frame, excluding
@@ -30,11 +37,21 @@ public static class Win {
     if (DwmGetWindowAttribute(h, 9, out r, Marshal.SizeOf(typeof(RECT))) == 0) return r;
     GetWindowRect(h, out r); return r;
   }
+  // Makes `h` the foreground window (attaching to the current foreground thread so Windows allows it) and reports whether it really is.
+  public static bool Activate(IntPtr h) {
+    IntPtr fg = GetForegroundWindow(); uint pid; uint me = GetCurrentThreadId();
+    uint fgThread = fg == IntPtr.Zero ? 0 : GetWindowThreadProcessId(fg, out pid);
+    bool attached = fgThread != 0 && fgThread != me && AttachThreadInput(me, fgThread, true);
+    ShowWindow(h, 5); BringWindowToTop(h); SetForegroundWindow(h); SetFocus(h);
+    if (attached) AttachThreadInput(me, fgThread, false);
+    return GetForegroundWindow() == h;
+  }
+  public static IntPtr Foreground() { return GetForegroundWindow(); }
   public static List<string> Windows(uint[] pids) {
     var res = new List<string>();
     EnumWindows((h, l) => { uint pid; GetWindowThreadProcessId(h, out pid);
       if (Array.IndexOf(pids, pid) >= 0) { var sb = new StringBuilder(256); GetWindowText(h, sb, 256); RECT r = VisibleRect(h);
-        res.Add(sb.ToString() + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + r.Left + "," + r.Top + "," + r.Right + "," + r.Bottom); }
+        res.Add(sb.ToString() + "|" + (IsWindowVisible(h) ? 1 : 0) + "|" + r.Left + "," + r.Top + "," + r.Right + "," + r.Bottom + "|" + h.ToInt64()); }
       return true; }, IntPtr.Zero);
     return res; }
 }
@@ -50,7 +67,7 @@ function Tree-Stats([int]$root) {
     privateMB = [math]::Round((($ps | Measure-Object PrivateMemorySize64 -Sum).Sum) / 1MB, 1); cpuSeconds = [math]::Round((($ps | ForEach-Object { $_.TotalProcessorTime.TotalSeconds } | Measure-Object -Sum).Sum), 3) }
 }
 function Window-List([int]$root) { [Win]::Windows([uint32[]](Get-Tree $root)) | ForEach-Object { $t = $_.Split("|"); $r = $t[2].Split(",") | ForEach-Object { [int]$_ }
-  [pscustomobject]@{ title = $t[0]; visible = ($t[1] -eq "1"); l = $r[0]; t = $r[1]; r = $r[2]; b = $r[3] } }
+  [pscustomobject]@{ title = $t[0]; visible = ($t[1] -eq "1"); l = $r[0]; t = $r[1]; r = $r[2]; b = $r[3]; hwnd = [int64]$t[3] } }
 }
 function Stats([string]$file) { Start-Process -FilePath $Exe -ArgumentList "--print-stats", "`"$file`"" -Wait -WindowStyle Hidden; if (Test-Path $file) { Get-Content $file -Raw | ConvertFrom-Json } else { $null } }
 function Shot([string]$name) { try { $b = [System.Windows.Forms.SystemInformation]::VirtualScreen; $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
@@ -110,12 +127,22 @@ Check "board window opens" ($null -ne $board) ""
 if ($board) {
   $bin = ($board.l -ge $wa.Left) -and ($board.t -ge $wa.Top) -and ($board.r -le $wa.Right) -and ($board.b -le $wa.Bottom)
   Check "board is fully on screen" $bin "$($board.l),$($board.t),$($board.r),$($board.b)"
-  if ($handle) { $ov = ($handle.l -lt $board.r) -and ($handle.r -gt $board.l) -and ($handle.t -lt $board.b) -and ($handle.b -gt $board.t); Check "board does not overlap the handle" (-not $ov) "" }
+  if ($handle) { $ov = ($handle.l -lt $board.r) -and ($handle.r -gt $board.l) -and ($handle.t -lt $board.b) -and ($handle.b -gt $board.t); Check "board does not overlap the handle" (-not $ov) "handle=$($handle.l),$($handle.t),$($handle.r),$($handle.b) board=$($board.l),$($board.t),$($board.r),$($board.b)" }
 }
 Start-Sleep -Seconds 1; $shotOk = Shot "board-open.png"; $open = Tree-Stats $p.Id
 Write-Host "BOARD OPEN: $($open.processes) processes, working set $($open.workingSetMB) MB, private $($open.privateMB) MB"
-[System.Windows.Forms.SendKeys]::SendWait("{ESC}"); Start-Sleep -Seconds 3
-$w = Window-List $p.Id; Check "Escape closes the board" (-not ($w | Where-Object { $_.title -eq "MyPinboard" -and $_.visible })) "(needs the board to have keyboard focus; see notes if this is the only failure)"
+# Escape is delivered to the foreground window, so the board must really own the keyboard focus first. Record whether the app focused itself on
+# open (informational), then activate the board's window explicitly, confirm it is the foreground window, and only then send Escape.
+if ($board) {
+  $selfFocused = ([Win]::Foreground().ToInt64() -eq $board.hwnd)
+  Write-Host "board focused by the app itself on open: $selfFocused"
+  $focused = $false; for ($i = 0; $i -lt 5 -and -not $focused; $i++) { $focused = [Win]::Activate([IntPtr]$board.hwnd); if (-not $focused) { Start-Sleep -Milliseconds 400 } }
+  Check "board window has keyboard focus (foreground)" $focused "app-focused-on-open=$selfFocused hwnd=$($board.hwnd)"
+  Start-Sleep -Milliseconds 700   # let WebView2 take the key focus after the OS activation
+  [System.Windows.Forms.SendKeys]::SendWait("{ESC}")
+  $closed = $false; for ($i = 0; $i -lt 12 -and -not $closed; $i++) { Start-Sleep -Milliseconds 500; $w = Window-List $p.Id; $closed = -not ($w | Where-Object { $_.title -eq "MyPinboard" -and $_.visible }) }
+  Check "Escape closes the board" $closed "board window hidden after Escape (sent to hwnd $($board.hwnd))"
+} else { Check "Escape closes the board" $false "board window was not open, Escape could not be tested" }
 
 # ---- 5. persistence across restart, then single-instance relaunch ----
 Start-Process -FilePath "taskkill.exe" -ArgumentList "/PID", $p.Id, "/T", "/F" -Wait -WindowStyle Hidden; Start-Sleep -Seconds 2
