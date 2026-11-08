@@ -1,4 +1,4 @@
-//! The two native windows: the permanent edge `handle` and the on-demand `board`.
+//! The native windows: the permanent edge `handle`, the on-demand floating panel (`board`) and the separate `settings` window.
 //! The board webview is created lazily and destroyed after a period of inactivity so the app stays light in the background.
 use crate::state::{self, st, LockExt};
 use crate::{commands, platform};
@@ -10,6 +10,7 @@ use tauri::{AppHandle, DragDropEvent, Emitter, Manager, PhysicalPosition, Physic
 
 pub const HANDLE: &str = "handle";
 pub const BOARD: &str = "board";
+pub const SETTINGS: &str = "settings";
 const IDLE_DESTROY: Duration = Duration::from_secs(90);
 
 fn set_rect(w: &WebviewWindow, r: PRect) {
@@ -84,12 +85,12 @@ pub fn schedule_display_refresh(app: &AppHandle) {
 
 fn place_board(app: &AppHandle, w: &WebviewWindow) {
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect(&p, m), true); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect_sized(&p, m, Some(state::settings(app).panel_size())), true); }
 }
 /// Re-fit the board's visible frame without moving it first (the frame can only be measured reliably once the window is shown).
 fn fit_board(app: &AppHandle, w: &WebviewWindow) {
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { let r = board_rect(&p, m); let _ = platform::fit_visible_rect(w, r.x, r.y, r.w, r.h); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { let r = board_rect_sized(&p, m, Some(state::settings(app).panel_size())); let _ = platform::fit_visible_rect(w, r.x, r.y, r.w, r.h); }
 }
 /// Give the board the real OS keyboard focus (needed for Escape and typing), even when another app is in the foreground.
 fn focus_board(w: &WebviewWindow) { let _ = w.set_focus(); platform::focus_window(w); }
@@ -98,20 +99,52 @@ pub fn refresh_backdrop(app: &AppHandle) { if let Some(w) = app.get_webview_wind
 
 #[cfg(windows)]
 fn apply_backdrop(app: &AppHandle, w: &WebviewWindow) {
-    use window_vibrancy::{apply_acrylic, apply_mica};
-    let dark = match state::settings(app).theme.as_str() { "dark" => true, "light" => false, _ => w.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true) };
-    let mode = if apply_mica(w, Some(dark)).is_ok() { "mica" } else if apply_acrylic(w, Some(if dark { (16, 11, 38, 140) } else { (246, 246, 255, 140) })).is_ok() { "acrylic" } else { "none" };
+    use window_vibrancy::{apply_acrylic, apply_mica, clear_acrylic, clear_mica};
+    let s = state::settings(app);
+    let dark = match s.theme.as_str() { "dark" => true, "light" => false, _ => w.theme().map(|t| t == tauri::Theme::Dark).unwrap_or(true) };
+    // Start clean so switching material in settings really switches (errors just mean "was not applied").
+    let _ = clear_mica(w); let _ = clear_acrylic(w);
+    let acrylic = |w: &WebviewWindow| apply_acrylic(w, Some(if dark { (16, 11, 38, 140) } else { (246, 246, 255, 140) })).is_ok();
+    let mode = match s.material() {
+        "glass" => "none",
+        "acrylic" => if acrylic(w) { "acrylic" } else if apply_mica(w, Some(dark)).is_ok() { "mica" } else { "none" },
+        "mica" => if apply_mica(w, Some(dark)).is_ok() { "mica" } else if acrylic(w) { "acrylic" } else { "none" },
+        _ => if apply_mica(w, Some(dark)).is_ok() { "mica" } else if acrylic(w) { "acrylic" } else { "none" },
+    };
     *st(app).backdrop.guard() = mode.into();
     let _ = app.emit("native-info-changed", mode);
 }
 #[cfg(not(windows))]
 fn apply_backdrop(app: &AppHandle, _w: &WebviewWindow) { *st(app).backdrop.guard() = "none".into(); }
 
+/// Settings changed the panel size or the toggle's edge/position: re-place the handle and, if it is open, the panel.
+pub fn refresh_layout(app: &AppHandle) {
+    place_handle(app);
+    if st(app).board_open.load(SeqCst) { if let Some(w) = app.get_webview_window(BOARD) { place_board(app, &w); } }
+}
+
+/// The separate MyPinboard window (settings + library). Created on demand; `section` picks the page ("appearance", "toggle", "library", ...).
+pub fn show_settings(app: &AppHandle, section: Option<String>) {
+    let section = section.filter(|s| !s.is_empty() && s.len() <= 16 && s.chars().all(|c| c.is_ascii_lowercase()));
+    let w = match app.get_webview_window(SETTINGS) {
+        Some(w) => w,
+        None => {
+            let url = match &section { Some(s) => format!("index.html?w=settings&section={s}"), None => "index.html?w=settings".into() };
+            let built = WebviewWindowBuilder::new(app, SETTINGS, WebviewUrl::App(url.into()))
+                .title("MyPinboard").inner_size(1040.0, 700.0).min_inner_size(760.0, 520.0).center().resizable(true)
+                .data_directory(st(app).paths.webview_dir.clone()).build();
+            match built { Ok(w) => w, Err(e) => { log::error!("settings window: {e}"); return; } }
+        }
+    };
+    if let Some(s) = &section { let _ = app.emit_to(SETTINGS, "settings-section", s); }
+    let _ = w.unminimize(); let _ = w.show(); platform::focus_window(&w); let _ = w.set_focus();
+}
+
 fn create_board(app: &AppHandle) -> Result<WebviewWindow, String> {
     let paths = &st(app).paths;
     let w = WebviewWindowBuilder::new(app, BOARD, WebviewUrl::App("index.html?w=board".into()))
         .title("MyPinboard").decorations(false).transparent(true).always_on_top(true).skip_taskbar(true).resizable(false)
-        .shadow(true).focused(false).visible(false).inner_size(480.0, 640.0).data_directory(paths.webview_dir.clone())
+        .shadow(true).focused(false).visible(false).inner_size(state::settings(app).panel_size().0, state::settings(app).panel_size().1).data_directory(paths.webview_dir.clone())
         .build().map_err(|e| e.to_string())?;
     platform::round_corners(&w);
     apply_backdrop(app, &w);

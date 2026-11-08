@@ -39,7 +39,10 @@ describe("settings normalisation", () => {
     const root = document_like(); applySettings({ ...DEFAULT_SETTINGS, handleThickness: 12, handleLength: 60, accent: "mint" }, root as unknown as HTMLElement);
     expect(root.vars["--accent"]).toBe("#1fae83"); expect(root.vars["--handle-t"]).toBe("12px"); expect(root.vars["--handle-len"]).toBe("60%");
     expect(12 * Number(root.vars["--handle-grow"])).toBeLessThanOrEqual(16); expect(root.dataset.indicator).toBe("on");
+    expect(root.vars["--tg-main"]).toBeUndefined(); expect(root.vars["--panel-r"]).toBe("20px"); expect(root.vars["--glass-alpha"]).toBe("0.75");
+    applySettings({ ...DEFAULT_SETTINGS, toggleColor: "#ff8800", toggleGlowOn: false, panelRadius: 12, shadowIntensity: 0 }, root as unknown as HTMLElement);
+    expect(root.vars["--tg-main"]).toBe("#ff8800"); expect(root.vars["--tg-glow-pct"]).toBe("0%"); expect(root.vars["--panel-r"]).toBe("12px"); expect(root.vars["--panel-shadow"]).toBe("none");
     applySettings({ ...DEFAULT_SETTINGS, animSpeed: 0, handleIndicator: false }, root as unknown as HTMLElement); expect(root.dataset.motion).toBe("off"); expect(root.dataset.indicator).toBe("off");
   });
 });
-function document_like() { const vars: Record<string, string> = {}; return { vars, dataset: {} as Record<string, string>, style: { setProperty: (k: string, v: string) => { vars[k] = v; } } }; }
+function document_like() { const vars: Record<string, string> = {}; return { vars, dataset: {} as Record<string, string>, style: { setProperty: (k: string, v: string) => { vars[k] = v; }, removeProperty: (k: string) => { delete vars[k]; } } }; }

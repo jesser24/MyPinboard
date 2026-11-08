@@ -36,6 +36,8 @@ pub fn remove_items(s: S, ids: Vec<String>) -> R<()> {
     ingest::delete_image_refs(&s.paths.images_dir, &orphans); Ok(())
 }
 #[tauri::command(async)] pub fn save_collections(s: S, collections: Vec<Collection>) -> R<()> { s.db.guard().save_collections(&collections).map_err(e) }
+/// Open (or focus) the separate settings window, optionally at a section.
+#[tauri::command] pub fn open_settings(app: AppHandle, section: Option<String>) { shell::show_settings(&app, section); }
 #[tauri::command(async)] pub fn save_settings(app: AppHandle, settings: Settings) -> R<Vec<String>> { Ok(state::apply_settings(&app, settings)) }
 
 #[tauri::command(async)]

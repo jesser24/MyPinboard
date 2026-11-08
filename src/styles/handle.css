@@ -10,33 +10,40 @@
 .handle[data-edge="left"]::before { inset: -8px -14px -8px 0; } .handle[data-edge="right"]::before { inset: -8px 0 -8px -14px; }
 .handle[data-edge="top"]::before { inset: 0 -8px -14px -8px; } .handle[data-edge="bottom"]::before { inset: -14px -8px 0 -8px; }
 
+/* Toggle colours come from settings: --tg-main (fill) --tg-bg (rail behind the tab) --tg-border --tg-glow --tg-hover --tg-active --tg-dot, plus --tg-glow-pct / --tg-glow-blur.
+   Anything unset falls back to the accent, so a fresh install looks exactly as before. */
 .handle span {
   position: absolute; display: block;
-  background: color-mix(in srgb, var(--accent) 88%, #fff);
-  border: 1px solid rgb(255 255 255 / .32);
-  box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px 10px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 rgb(255 255 255 / .38);
-  transition: transform var(--t-base) var(--ease-spring), box-shadow var(--t-base) var(--ease-out), opacity var(--t-base);
+  background: var(--tg-main, color-mix(in srgb, var(--accent) 88%, #fff));
+  border: 1px solid var(--tg-border, rgb(255 255 255 / .32));
+  box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px var(--tg-glow-blur, 14px) color-mix(in srgb, var(--tg-glow, var(--tg-main, var(--accent))) var(--tg-glow-pct, 45%), transparent), inset 0 1px 0 rgb(255 255 255 / .38);
+  transition: transform var(--t-base) var(--ease-spring), box-shadow var(--t-base) var(--ease-out), opacity var(--t-base), background var(--t-base);
   will-change: transform;
 }
+/* Optional rail behind the tab (only drawn once a background colour is chosen) */
+.handle::after { content: ""; position: absolute; inset: 0; background: var(--tg-bg, transparent); opacity: .55; pointer-events: none; border-radius: 99px; }
+.handle[data-edge="left"]::after, .handle[data-edge="right"]::after { inset: 0 5px; } .handle[data-edge="top"]::after, .handle[data-edge="bottom"]::after { inset: 5px 0; }
+.handle:hover span, .handle.force-hover span { background: var(--tg-hover, var(--tg-main, color-mix(in srgb, var(--accent) 88%, #fff))); }
+.handle.active span { background: var(--tg-active, var(--tg-hover, var(--tg-main, color-mix(in srgb, var(--accent) 88%, #fff)))); }
 /* Anchored to the screen edge, centred on the other axis. Hover grows the pill toward the desktop, never past the window. */
 .handle[data-edge="right"] span  { right: 0;  top: 50%;  width: var(--handle-t); height: var(--handle-len); transform: translateY(-50%); transform-origin: right center; border-right: 0;  border-radius: 99px 0 0 99px; }
 .handle[data-edge="left"] span   { left: 0;   top: 50%;  width: var(--handle-t); height: var(--handle-len); transform: translateY(-50%); transform-origin: left center;  border-left: 0;   border-radius: 0 99px 99px 0; }
 .handle[data-edge="top"] span    { top: 0;    left: 50%; height: var(--handle-t); width: var(--handle-len); transform: translateX(-50%); transform-origin: center top;    border-top: 0;    border-radius: 0 0 99px 99px; }
 .handle[data-edge="bottom"] span { bottom: 0; left: 50%; height: var(--handle-t); width: var(--handle-len); transform: translateX(-50%); transform-origin: center bottom; border-bottom: 0; border-radius: 99px 99px 0 0; }
-.handle[data-edge="right"]:hover span,  .handle[data-edge="right"]:focus-visible span,  .handle[data-edge="right"].active span  { transform: translateY(-50%) scaleX(var(--handle-grow)); }
-.handle[data-edge="left"]:hover span,   .handle[data-edge="left"]:focus-visible span,   .handle[data-edge="left"].active span   { transform: translateY(-50%) scaleX(var(--handle-grow)); }
-.handle[data-edge="top"]:hover span,    .handle[data-edge="top"]:focus-visible span,    .handle[data-edge="top"].active span    { transform: translateX(-50%) scaleY(var(--handle-grow)); }
-.handle[data-edge="bottom"]:hover span, .handle[data-edge="bottom"]:focus-visible span, .handle[data-edge="bottom"].active span { transform: translateX(-50%) scaleY(var(--handle-grow)); }
-.handle:hover span, .handle:focus-visible span, .handle.active span { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px 14px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgb(255 255 255 / .5); }
+.handle[data-edge="right"]:hover span, .handle[data-edge="right"].force-hover span,  .handle[data-edge="right"]:focus-visible span,  .handle[data-edge="right"].active span  { transform: translateY(-50%) scaleX(var(--handle-grow)); }
+.handle[data-edge="left"]:hover span, .handle[data-edge="left"].force-hover span,   .handle[data-edge="left"]:focus-visible span,   .handle[data-edge="left"].active span   { transform: translateY(-50%) scaleX(var(--handle-grow)); }
+.handle[data-edge="top"]:hover span, .handle[data-edge="top"].force-hover span,    .handle[data-edge="top"]:focus-visible span,    .handle[data-edge="top"].active span    { transform: translateX(-50%) scaleY(var(--handle-grow)); }
+.handle[data-edge="bottom"]:hover span, .handle[data-edge="bottom"].force-hover span, .handle[data-edge="bottom"]:focus-visible span, .handle[data-edge="bottom"].active span { transform: translateX(-50%) scaleY(var(--handle-grow)); }
+.handle:hover span, .handle.force-hover span, .handle:focus-visible span, .handle.active span { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 2px calc(var(--tg-glow-blur, 14px) + 4px) color-mix(in srgb, var(--tg-glow, var(--tg-main, var(--accent))) calc(var(--tg-glow-pct, 45%) + 22%), transparent), inset 0 1px 0 rgb(255 255 255 / .5); }
 .handle:focus-visible { outline: none; } .handle:focus-visible span { outline: 2px solid var(--focus); outline-offset: 2px; }
 .handle.dragging span { transition: none; }
 
 /* "Something new since you last looked": a small light in the middle of the pill, plus one soft pulse on arrival. */
 html[data-indicator="on"] .handle[data-unseen="true"] span::after {
-  content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff; box-shadow: 0 0 6px 1px rgb(255 255 255 / .8);
+  content: ""; position: absolute; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: var(--tg-dot, #fff); box-shadow: 0 0 6px 1px color-mix(in srgb, var(--tg-dot, #fff) 80%, transparent); outline: 1.5px solid rgb(0 0 0 / .28);
 }
 .handle.pulse span { animation: pb-pulse 640ms var(--ease-out); }
-@keyframes pb-pulse { 0% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 0 color-mix(in srgb, var(--accent) 70%, transparent); } 70% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 0 transparent; } }
+@keyframes pb-pulse { 0% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 0 color-mix(in srgb, var(--tg-dot, var(--tg-main, var(--accent))) 70%, transparent); } 70% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 9px transparent; } 100% { box-shadow: 0 0 0 1px rgb(0 0 0 / .22), 0 0 0 0 transparent; } }
 
 /* snapping guides while the handle or board is dragged (browser preview) */
 .guide { position: absolute; z-index: 25; background: var(--accent-line); opacity: .35; transition: opacity var(--t-base), background var(--t-base); pointer-events: none; border-radius: 3px; }

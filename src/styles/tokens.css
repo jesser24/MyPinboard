@@ -71,6 +71,7 @@
 html, body, #root { margin: 0; height: 100%; }
 body { font-family: var(--font); color: var(--ink); background: transparent; overflow: hidden; -webkit-font-smoothing: antialiased; user-select: none; }
 /* Browser preview only: a neutral wallpaper so the glass can be judged. In the Windows app the window is transparent over the real desktop. */
+body.dev:has(:root[data-theme="light"]), :root[data-theme="light"] body.dev { background: radial-gradient(1100px 640px at 12% 8%, #c9d6f6 0, transparent 62%), radial-gradient(900px 600px at 92% 92%, #b5e0e2 0, transparent 60%), #e6eaf4; }
 body.dev { background: radial-gradient(1100px 640px at 12% 8%, #3b4a7a 0, transparent 62%), radial-gradient(900px 600px at 92% 92%, #2a6f7a 0, transparent 60%), #10131c; }
 button, input, select, textarea { font: inherit; color: inherit; }
 button { cursor: pointer; }
