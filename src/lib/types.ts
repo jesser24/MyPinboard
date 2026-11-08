@@ -16,5 +16,16 @@ export interface PinItem {
 }
 export interface Collection { id: string; name: string; color: string }
 export type SortKey = "recent" | "name" | "size" | "type";
-export interface Query { text: string; kinds: ItemKind[]; collectionId?: string; tag?: string; favoritesOnly: boolean; sort: SortKey }
+export type DateRange = "any" | "today" | "week" | "month";
+export interface Query {
+  text: string;
+  kinds: ItemKind[];
+  collectionId?: string;
+  tag?: string;
+  favoritesOnly: boolean;
+  pinnedOnly?: boolean;
+  /** Only items captured at or after this epoch-ms instant. */
+  since?: number;
+  sort: SortKey;
+}
 export type Edge = "top" | "bottom" | "left" | "right";

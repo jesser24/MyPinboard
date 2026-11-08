@@ -2,19 +2,24 @@ import type { PinItem, Query } from "./types";
 
 const norm = (s: string) => s.normalize("NFKD").replace(/\p{M}/gu, "").toLowerCase();
 
-export function matches(item: PinItem, q: Query): boolean {
+/** id → display name, so a search for "work" also finds items filed in the Work collection. */
+export type CollectionNames = ReadonlyMap<string, string>;
+
+export function matches(item: PinItem, q: Query, names?: CollectionNames): boolean {
   if (q.kinds.length && !q.kinds.includes(item.kind)) return false;
   if (q.collectionId && item.collectionId !== q.collectionId) return false;
   if (q.favoritesOnly && !item.favorite) return false;
+  if (q.pinnedOnly && !item.pinned) return false;
+  if (q.since !== undefined && item.capturedAt < q.since) return false;
   if (q.tag && !item.tags.includes(q.tag)) return false;
   const needle = norm(q.text.trim());
   if (!needle) return true;
-  const hay = norm([item.title, item.content, item.tags.join(" "), item.sourceApp ?? ""].join("\n"));
+  const hay = norm([item.title, item.content, item.tags.join(" "), item.sourceApp ?? "", names?.get(item.collectionId) ?? ""].join("\n"));
   return needle.split(/\s+/).every((tok) => hay.includes(tok));
 }
 
-export function runQuery(items: PinItem[], q: Query): PinItem[] {
-  const out = items.filter((i) => matches(i, q));
+export function runQuery(items: PinItem[], q: Query, names?: CollectionNames): PinItem[] {
+  const out = items.filter((i) => matches(i, q, names));
   const cmp: Record<Query["sort"], (a: PinItem, b: PinItem) => number> = {
     recent: (a, b) => b.capturedAt - a.capturedAt,
     name: (a, b) => a.title.localeCompare(b.title, undefined, { sensitivity: "base" }),

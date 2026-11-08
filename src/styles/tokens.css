@@ -1,0 +1,85 @@
+/* =====================================================================================================
+   MyPinboard design tokens — "Ledger".
+   Cool graphite neutrals, ONE flat accent, three radii, two shadow levels. Everything else derives from these.
+   Layout of the file: scale → dark theme (default) → light theme (explicit, then system) → base element rules.
+   ===================================================================================================== */
+:root {
+  /* accent: set at runtime from Settings.accent (see applySettings) */
+  --accent: #7b6cf6;
+  --accent-ink: color-mix(in srgb, var(--accent) 70%, var(--ink));        /* accent-coloured TEXT: mixed toward ink so it keeps contrast on both themes */
+  --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);       /* selection and active-nav tint */
+  --accent-line: color-mix(in srgb, var(--accent) 50%, transparent);
+  --on-accent: #fff;
+  --focus: color-mix(in srgb, var(--accent) 80%, white);
+
+  /* material (runtime: transparency and blur sliders) */
+  --glass-alpha: .72; --blur: 22px; --dur: 280ms;
+
+  /* motion */
+  --ease-out: cubic-bezier(.2, .8, .2, 1); --ease-spring: cubic-bezier(.2, .9, .25, 1.05);
+  --t-fast: 120ms; --t-base: 180ms;
+
+  /* shape */
+  --r-sm: 6px;    /* controls, rows, menu items */
+  --r-md: 10px;   /* popovers, tiles, search */
+  --r-lg: 12px;   /* board, dialogs */
+
+  /* type: Segoe UI Variable on Windows 11 (native look), system UI elsewhere */
+  --font: "Segoe UI Variable Text", "Segoe UI Variable", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  --font-display: "Segoe UI Variable Display", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", "Cascadia Code", Consolas, "SFMono-Regular", Menlo, monospace;
+  --fs-meta: .846em;   /* 11px at the 13px base   : timestamps, counts, hints */
+  --fs-small: .923em;  /* 12px                    : secondary lines, labels */
+  --fs-body: 1em;      /* 13px                    : rows, controls */
+  --fs-title: 1.231em; /* 16px                    : section title */
+  --fs-display: 1.46em;/* 19px                    : empty states, dialogs of one idea */
+
+  /* dark (default) */
+  --bg-rgb: 20 22 27; --side-rgb: 13 15 19; --raised: rgb(255 255 255 / .11);
+  --ink: #e8eaef; --ink-2: #a3a8b5; --ink-3: #7a8090;
+  --fill: rgb(255 255 255 / .05); --fill-hover: rgb(255 255 255 / .08); --fill-press: rgb(255 255 255 / .12);
+  --line: rgb(255 255 255 / .08); --line-strong: rgb(255 255 255 / .16);
+  --shadow-pop: 0 14px 36px rgb(0 0 0 / .5), 0 2px 8px rgb(0 0 0 / .35);
+  --shadow-board: 0 24px 60px rgb(0 0 0 / .5), 0 2px 10px rgb(0 0 0 / .35);
+  --success: #45c08a; --warn: #e8aa45; --danger: #f07882;
+  color-scheme: dark;
+}
+:root[data-theme="light"] {
+  --bg-rgb: 248 249 251; --side-rgb: 236 238 243; --raised: #fff;
+  --ink: #181b24; --ink-2: #4a5163; --ink-3: #646b7c;
+  --fill: rgb(20 24 40 / .045); --fill-hover: rgb(20 24 40 / .075); --fill-press: rgb(20 24 40 / .11);
+  --line: rgb(20 24 40 / .09); --line-strong: rgb(20 24 40 / .18);
+  --shadow-pop: 0 14px 32px rgb(20 24 40 / .2), 0 2px 6px rgb(20 24 40 / .12);
+  --shadow-board: 0 22px 50px rgb(20 24 40 / .22), 0 2px 8px rgb(20 24 40 / .14);
+  --success: #1d8a5c; --warn: #9a5f00; --danger: #c52a3c;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root[data-theme="system"] {
+    --bg-rgb: 248 249 251; --side-rgb: 236 238 243; --raised: #fff;
+    --ink: #181b24; --ink-2: #4a5163; --ink-3: #646b7c;
+    --fill: rgb(20 24 40 / .045); --fill-hover: rgb(20 24 40 / .075); --fill-press: rgb(20 24 40 / .11);
+    --line: rgb(20 24 40 / .09); --line-strong: rgb(20 24 40 / .18);
+    --shadow-pop: 0 14px 32px rgb(20 24 40 / .2), 0 2px 6px rgb(20 24 40 / .12);
+    --shadow-board: 0 22px 50px rgb(20 24 40 / .22), 0 2px 8px rgb(20 24 40 / .14);
+    --success: #1d8a5c; --warn: #9a5f00; --danger: #c52a3c;
+    color-scheme: light;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { margin: 0; height: 100%; }
+body { font-family: var(--font); color: var(--ink); background: transparent; overflow: hidden; -webkit-font-smoothing: antialiased; user-select: none; }
+/* Browser preview only: a neutral wallpaper so the glass can be judged. In the Windows app the window is transparent over the real desktop. */
+body.dev { background: radial-gradient(1100px 640px at 12% 8%, #3b4a7a 0, transparent 62%), radial-gradient(900px 600px at 92% 92%, #2a6f7a 0, transparent 60%), #10131c; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+::selection { background: var(--accent-soft); }
+.muted { color: var(--ink-2); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+kbd { font: inherit; font-size: var(--fs-meta); color: var(--ink-3); padding: 1px 6px; border-radius: 4px; border: 1px solid var(--line-strong); background: var(--fill); white-space: nowrap; }
+
+/* Reduced transparency: opaque surfaces, same layout. Reduced motion is handled in JS (MotionConfig) and by --dur here. */
+@media (prefers-reduced-motion: reduce) { :root { --dur: .01ms !important; --t-fast: .01ms; --t-base: .01ms; } }
+html[data-motion="off"] { --t-fast: .01ms; --t-base: .01ms; }

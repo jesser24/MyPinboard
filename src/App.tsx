@@ -3,10 +3,12 @@ import { LocalBackend } from "./lib/api";
 import { classifyText } from "./lib/capture";
 import { ANIM_DURATION_MS } from "./lib/settings";
 import { boardRect, handleRect, nearestEdge, offsetFor, recoverPlacement, type Pt } from "./lib/edge";
-import { baseFontPx, boardSize, density as densityOf, gridColumns } from "./lib/layout";
+import { boardSize } from "./lib/layout";
 import { useStore } from "./lib/store";
 import type { Edge } from "./lib/types";
 import { Board } from "./components/Board";
+import { MotionRoot } from "./components/Motion";
+import { Toast } from "./components/Toast";
 
 type Phase = "closed" | "opening" | "open" | "closing";
 const backend = new LocalBackend();
@@ -34,14 +36,24 @@ export default function App() {
   const [free, setFree] = useState<Pt | null>(null);                                       // board being moved (top-left)
   const [guide, setGuide] = useState<Edge | null>(null);
   const [fileDrag, setFileDrag] = useState(false);
+  const [unseen, setUnseen] = useState(false);
   const busy = useRef(false); // true while moving the handle/board: outside-click must not close
   const timers = useRef<number[]>([]);
 
   const place = live ?? (s ? recoverPlacement(s.edge, s.offset, area) : { edge: "right" as Edge, offset: 0.5 });
   const size = useMemo(() => boardSize(area, place.edge), [area, place.edge]);
   const rect = boardRect(place.edge, place.offset, area, size);
-  const dens = densityOf(size);
   const dur = !s || s.animSpeed === 0 ? 0 : ANIM_DURATION_MS / s.animSpeed;
+
+  // "New since you last looked": a newly captured item while the board is closed lights the handle; opening the board clears it.
+  const newest = store.snap?.items.reduce((m, i) => Math.max(m, i.capturedAt), 0) ?? 0; const seenNewest = useRef<number | null>(null);
+  const [pulse, setPulse] = useState(0);
+  useEffect(() => {
+    if (!store.snap) return;
+    if (seenNewest.current === null) { seenNewest.current = newest; return; }
+    if (newest > seenNewest.current) { seenNewest.current = newest; if (phase === "closed" || phase === "closing") { setUnseen(true); setPulse((n) => n + 1); } }
+  }, [newest, store.snap, phase]);
+  useEffect(() => { if (phase === "opening" || phase === "open") setUnseen(false); }, [phase]);
 
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const openBoard = useCallback(() => { clearTimers(); setPhase("opening"); requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open"))); }, []);
@@ -112,13 +124,13 @@ export default function App() {
   const vertical = place.edge === "left" || place.edge === "right";
   const visible = phase !== "closed";
 
-  if (!store.snap) return null;
   return (
+    <MotionRoot speed={s?.animSpeed ?? 1}>
     <div className="stage" data-edge={place.edge}>
       {visible && <div className="scrim" onPointerDown={() => { if (!fileDrag && !busy.current) closeBoard(); }} />}
       {guide && ["left", "right", "top", "bottom"].map((e) => <div key={e} className={`guide ${e} ${e === guide ? "hot" : ""}`} />)}
 
-      <div className={`handle ${vertical ? "v" : "h"} ${phase === "open" ? "active" : ""} ${live ? "dragging" : ""}`} data-edge={place.edge} role="button" tabIndex={0}
+      <div key={pulse} className={`handle ${vertical ? "v" : "h"} ${phase === "open" ? "active" : ""} ${live ? "dragging" : ""} ${pulse ? "pulse" : ""}`} data-edge={place.edge} data-unseen={unseen} role="button" tabIndex={0}
         aria-label="Open MyPinboard" aria-expanded={phase === "open"} title="Click to open · drag to move"
         style={{ left: hr.x, top: hr.y, width: hr.w, height: hr.h }} onPointerDown={onHandleDown} onDragEnter={() => { if (fileDrag && phase === "closed") openBoard(); }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}><span /></div>
@@ -126,10 +138,11 @@ export default function App() {
       {visible && (
         <section className={`board ${free ? "moving" : ""}`} data-state={phase} data-edge={place.edge} aria-label="MyPinboard"
           style={{ left: br.x, top: br.y, width: br.w, height: br.h }}>
-          <Board store={store} cols={gridColumns(br.w, dens)} density={dens} fontPx={baseFontPx(br.w)} dropping={fileDrag} onClose={closeBoard} gripProps={{ onPointerDown: onGripDown }} searchTick={searchTick} />
+          <Board store={store} width={br.w} dropping={fileDrag} onClose={closeBoard} gripProps={{ onPointerDown: onGripDown }} searchTick={searchTick} />
         </section>
       )}
-      <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
+      <Toast message={toast} />
     </div>
+    </MotionRoot>
   );
 }
