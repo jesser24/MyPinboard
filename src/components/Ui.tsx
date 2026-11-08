@@ -4,7 +4,7 @@ import { m } from "motion/react";
 import {
   AlignLeft, ArrowDownUp, Check, ChevronLeft, ChevronRight, Clock, Code, Command, Copy, CornerDownLeft, Ellipsis, ExternalLink, Eye, File, FileText, Folder, FolderInput,
   GripVertical, HardDrive, Image, Inbox, Info, Keyboard, LayoutGrid, Link2, List, Palette, PanelLeft, PanelLeftClose, CirclePause, CirclePlay, Pencil, Pin, PinOff, Plus, Search,
-  Settings, ShieldCheck, SlidersHorizontal, Star, Tag, Trash2, X, Rows3, Layers, Sparkles, type LucideIcon,
+  Settings, ShieldCheck, PanelRight, ClipboardList, SlidersHorizontal, Star, Tag, Trash2, X, Rows3, Layers, Sparkles, type LucideIcon,
 } from "lucide-react";
 import { popVariants, useMotion } from "./Motion";
 
@@ -14,7 +14,7 @@ const ICONS = {
   search: Search, settings: Settings, close: X, pause: CirclePause, play: CirclePlay, grip: GripVertical, back: ChevronLeft, forward: ChevronRight, check: Check, plus: Plus,
   copy: Copy, edit: Pencil, trash: Trash2, move: FolderInput, open: ExternalLink, eye: Eye, tag: Tag, more: Ellipsis, command: Command, enter: CornerDownLeft,
   list: List, rows: Rows3, grid: LayoutGrid, sort: ArrowDownUp, filter: SlidersHorizontal, clock: Clock, sidebar: PanelLeft, sidebarClose: PanelLeftClose,
-  palette: Palette, storage: HardDrive, privacy: ShieldCheck, about: Info, keyboard: Keyboard, layers: Layers, sparkle: Sparkles,
+  palette: Palette, panelRight: PanelRight, clipboardList: ClipboardList, storage: HardDrive, privacy: ShieldCheck, about: Info, keyboard: Keyboard, layers: Layers, sparkle: Sparkles,
 } satisfies Record<string, LucideIcon>;
 export type IconName = keyof typeof ICONS;
 

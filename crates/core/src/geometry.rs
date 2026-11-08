@@ -72,10 +72,18 @@ pub fn board_size_logical(aw: f64, ah: f64, edge: Edge) -> (f64, f64) {
     (w.min((aw * 0.92).floor()), h.min((ah * 0.92).floor()))
 }
 
-pub fn board_rect(p: &Placement, m: &MonitorInfo) -> PRect {
+/// The floating panel's size in dip: the user's width × height, clamped to 320–480 × 380–700 and never more than 92 % of the screen.
+pub fn panel_size_logical(aw: f64, ah: f64, w: f64, h: f64) -> (f64, f64) {
+    (clamp(w, 320.0, 480.0).min((aw * 0.92).floor()), clamp(h, 380.0, 700.0).min((ah * 0.92).floor()))
+}
+
+pub fn board_rect(p: &Placement, m: &MonitorInfo) -> PRect { board_rect_sized(p, m, None) }
+
+/// `size` is the user's panel size in dip; `None` keeps the adaptive default of `board_size_logical`.
+pub fn board_rect_sized(p: &Placement, m: &MonitorInfo, size: Option<(f64, f64)>) -> PRect {
     let aw = m.w as f64 / m.scale;
     let ah = m.h as f64 / m.scale;
-    let (sw, sh) = board_size_logical(aw, ah, p.edge);
+    let (sw, sh) = match size { Some((w, h)) => panel_size_logical(aw, ah, w, h), None => board_size_logical(aw, ah, p.edge) };
     let mg = BOARD_MARGIN;
     let w = sw.min(aw - 2.0 * mg);
     let h = sh.min(ah - 2.0 * mg);
@@ -132,6 +140,23 @@ mod tests {
             assert!(!overlap(&h, &b), "{name} {edge:?} {o}: board overlaps handle");
             assert!(b.w > 0 && b.h > 0);
         }}}}
+    }
+    #[test] fn user_sized_panel_stays_on_screen_and_clear_of_the_handle() {
+        for (name, mons) in setups() { for m in &mons { for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] { for o in [0.0, 0.5, 1.0, f64::NAN] { for size in [(380.0, 540.0), (480.0, 700.0), (320.0, 380.0), (9999.0, 9999.0)] {
+            let p = Placement { monitor: m.id.clone(), edge, offset: o };
+            let h = handle_window_rect(&p, m); let b = board_rect_sized(&p, m, Some(size));
+            assert!(inside(&b, m), "{name} {edge:?} {size:?}: {b:?} not in {m:?}");
+            assert!(!overlap(&h, &b), "{name} {edge:?} {size:?}: panel overlaps handle");
+        }}}}}
+    }
+    #[test] fn panel_size_respects_limits_and_screen() {
+        assert_eq!(panel_size_logical(1920.0, 1080.0, 380.0, 540.0), (380.0, 540.0));
+        assert_eq!(panel_size_logical(1920.0, 1080.0, 9999.0, 1.0), (480.0, 380.0));
+        assert_eq!(panel_size_logical(360.0, 640.0, 480.0, 700.0), (331.0, 588.0));
+    }
+    #[test] fn default_size_is_unchanged_when_no_user_size() {
+        let m = mon("A", 0, 0, 1920, 1040, 1.0, true); let p = Placement { monitor: "A".into(), edge: Edge::Right, offset: 0.5 };
+        assert_eq!(board_rect(&p, &m), board_rect_sized(&p, &m, None));
     }
     #[test] fn handle_is_flush_with_its_edge_and_thin() {
         let m = mon("A", 100, 50, 1920, 1040, 1.25, true);

@@ -75,7 +75,7 @@ pub fn run() {
             commands::get_snapshot, commands::get_settings, commands::upsert_item, commands::remove_items, commands::save_collections, commands::save_settings, commands::restore_snapshot,
             commands::capture_clipboard_now, commands::capture_paths, commands::copy_item, commands::open_item, commands::reveal_item, commands::native_info,
             commands::storage_info, commands::open_data_dir, commands::board_ready, commands::hide_board, commands::toggle_board, commands::begin_handle_drag,
-            commands::begin_board_drag, commands::current_edge, commands::quit_app
+            commands::begin_board_drag, commands::current_edge, commands::quit_app, commands::open_settings
         ])
         .setup(move |app| {
             let h = app.handle().clone();

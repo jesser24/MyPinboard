@@ -4,6 +4,8 @@ import type { Collection, PinItem } from "./types";
 import { addCapture, allowed, hashKey, titleFor, type NewCapture } from "./capture";
 import { dedupeKey } from "./dedupe";
 import { applySettings, mergeSettings, type Settings } from "./settings";
+import { PendingDeletes } from "./pending";
+import { expiredItems } from "./retention";
 
 export const COLLECTION_COLORS = ["#7b6cf6", "#2f8cf0", "#1fae83", "#d9912b", "#ec5f5f", "#c45ee0", "#5fb0c9", "#8c93a6"];
 
@@ -15,15 +17,26 @@ export function useStore(backend: Backend, onToast: (m: string) => void) {
   const [error, setError] = useState<string | null>(null);
   const ref = useRef<Snapshot | null>(null);
   const commit = (s: Snapshot) => { ref.current = s; setSnap(s); };
+  const pending = useRef<PendingDeletes | null>(null);
+  if (!pending.current) pending.current = new PendingDeletes((ids) => { void backend.removeItems(ids); });
+  /** A reload from the backend must not bring back items whose delete can still be undone. */
+  const prep = (raw: Snapshot): Snapshot => {
+    const s = normalise(raw); const wait = pending.current!.ids();
+    let items = wait.size ? s.items.filter((i) => !wait.has(i.id)) : s.items;
+    const old = expiredItems(items, s.settings.retentionDays);
+    if (old.length) { const gone = new Set(old.map((i) => i.id)); items = items.filter((i) => !gone.has(i.id)); void backend.removeItems([...gone]); }
+    return { ...s, items };
+  };
+  useEffect(() => { const f = () => pending.current?.flush(); addEventListener("pagehide", f); return () => removeEventListener("pagehide", f); }, []);
 
   const load = useCallback(() => {
     setError(null);
-    backend.load().then((raw) => { const s = normalise(raw); commit(s); applySettings(s.settings); }).catch((e) => setError(e instanceof Error ? e.message : String(e)));
+    backend.load().then((raw) => { const s = prep(raw); commit(s); applySettings(s.settings); }).catch((e) => setError(e instanceof Error ? e.message : String(e)));
   }, [backend]);
   useEffect(() => { load(); }, [load]);
 
   /** Native only: items captured by Rust while this window was open (clipboard, drops) appear immediately. */
-  const reload = useCallback(async () => { const s = normalise(await backend.load()); commit(s); applySettings(s.settings); }, [backend]);
+  const reload = useCallback(async () => { const s = prep(await backend.load()); commit(s); applySettings(s.settings); }, [backend]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     let off: (() => void) | undefined; let timer: number | undefined; let alive = true;
     backend.subscribe?.((e) => { clearTimeout(timer); timer = window.setTimeout(() => { void reload(); if (e.origin !== "ui") onToast(e.duplicate ? "Already saved — moved to top" : "Saved to board"); }, 80); }).then((u) => { if (alive) off = u; else u(); });
@@ -57,9 +70,20 @@ export function useStore(backend: Backend, onToast: (m: string) => void) {
   const remove = useCallback((ids: string[]) => { const s = ref.current; if (!s) return;
     commit({ ...s, items: s.items.filter((i) => !ids.includes(i.id)) }); void backend.removeItems(ids); }, [backend]);
 
+  /** Delete with a short Undo window. Returns how many items were removed. The backend (and image files) are only touched once the window passes. */
+  const removeUndoable = useCallback((ids: string[]): number => { const s = ref.current; if (!s) return 0;
+    const gone = s.items.filter((i) => ids.includes(i.id)); if (!gone.length) return 0;
+    pending.current!.stage(gone); commit({ ...s, items: s.items.filter((i) => !ids.includes(i.id)) }); return gone.length; }, []);
+  /** Bring back everything deleted inside the Undo window. */
+  const undoRemove = useCallback((): number => { const s = ref.current; const back = pending.current!.undoAll(); if (!s || !back.length) return 0;
+    commit({ ...s, items: [...s.items, ...back].sort((a, b) => b.capturedAt - a.capturedAt) }); return back.length; }, []);
+
   const setSettings = useCallback((patch: Partial<Settings>) => { const s = ref.current; if (!s) return;
     const settings = { ...s.settings, ...patch }; commit({ ...s, settings }); applySettings(settings);
     void Promise.resolve(backend.saveSettings(settings)).then((w) => { if (Array.isArray(w) && w.length) onToast(w[0]); }); }, [backend, onToast]);
+
+  /** Settings changed elsewhere (another window saved them): adopt them without writing anything back. */
+  const syncSettings = useCallback((raw: unknown) => { const s = ref.current; if (!s) return; const settings = mergeSettings(raw); commit({ ...s, settings }); applySettings(settings); }, []);
 
   const setCollections = useCallback((collections: Collection[]) => { const s = ref.current; if (!s) return;
     commit({ ...s, collections }); void backend.saveCollections(collections); }, [backend]);
@@ -87,6 +111,6 @@ export function useStore(backend: Backend, onToast: (m: string) => void) {
 
   const retitle = useCallback((i: PinItem, title: string) => patchItem(i.id, { title: title.trim() || titleFor(i.kind, i.content) }), [patchItem]);
 
-  return { snap, error, retry: load, reload, capture, patchItem, patchMany, remove, setSettings, setCollections, addCollection, renameCollection, deleteCollection, clearHistory, restore, copy, retitle, backend };
+  return { snap, error, retry: load, reload, capture, patchItem, patchMany, remove, removeUndoable, undoRemove, setSettings, syncSettings, setCollections, addCollection, renameCollection, deleteCollection, clearHistory, restore, copy, retitle, backend };
 }
 export type Store = ReturnType<typeof useStore>;

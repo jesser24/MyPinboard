@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LocalBackend } from "./lib/api";
 import { classifyText } from "./lib/capture";
-import { ANIM_DURATION_MS } from "./lib/settings";
+import { closeMs, motionSpeed } from "./lib/settings";
 import { boardRect, handleRect, nearestEdge, offsetFor, recoverPlacement, type Pt } from "./lib/edge";
-import { boardSize } from "./lib/layout";
+import { panelSize } from "./lib/layout";
 import { useStore } from "./lib/store";
 import type { Edge } from "./lib/types";
-import { Board } from "./components/Board";
+import { Panel } from "./components/Panel";
+import { SettingsApp, isSection, type Section } from "./components/settings/SettingsApp";
+import { Icon } from "./components/Ui";
 import { MotionRoot } from "./components/Motion";
 import { Toast } from "./components/Toast";
 
@@ -32,6 +34,9 @@ export default function App() {
   const s = store.snap?.settings;
   const [phase, setPhase] = useState<Phase>("closed");
   const [searchTick, setSearchTick] = useState(0);
+  // The full settings window. In the Windows app it is a separate native window; the browser preview shows it as a window-like layer. `?settings=animations` deep-links.
+  const [settingsAt, setSettingsAt] = useState<Section | null>(() => { const v = new URLSearchParams(location.search).get("settings"); return isSection(v) ? v : null; });
+  const lastSection = useRef<Section>("appearance");
   const [live, setLive] = useState<{ edge: Edge; offset: number } | null>(null);        // handle being dragged
   const [free, setFree] = useState<Pt | null>(null);                                       // board being moved (top-left)
   const [guide, setGuide] = useState<Edge | null>(null);
@@ -41,9 +46,9 @@ export default function App() {
   const timers = useRef<number[]>([]);
 
   const place = live ?? (s ? recoverPlacement(s.edge, s.offset, area) : { edge: "right" as Edge, offset: 0.5 });
-  const size = useMemo(() => boardSize(area, place.edge), [area, place.edge]);
+  const size = useMemo(() => panelSize(area, s?.panelWidth ?? 380, s?.panelHeight ?? 540), [area, s?.panelWidth, s?.panelHeight]);
   const rect = boardRect(place.edge, place.offset, area, size);
-  const dur = !s || s.animSpeed === 0 ? 0 : ANIM_DURATION_MS / s.animSpeed;
+  const dur = s ? closeMs(s) : 0;
 
   // "New since you last looked": a newly captured item while the board is closed lights the handle; opening the board clears it.
   const newest = store.snap?.items.reduce((m, i) => Math.max(m, i.capturedAt), 0) ?? 0; const seenNewest = useRef<number | null>(null);
@@ -58,16 +63,18 @@ export default function App() {
   const clearTimers = () => { timers.current.forEach(clearTimeout); timers.current = []; };
   const openBoard = useCallback(() => { clearTimers(); setPhase("opening"); requestAnimationFrame(() => requestAnimationFrame(() => setPhase("open"))); }, []);
   const closeBoard = useCallback(() => { clearTimers(); setPhase((p) => (p === "closed" ? p : "closing")); timers.current.push(window.setTimeout(() => setPhase("closed"), dur + 30)); }, [dur]);
+  const openSettings = useCallback((sec?: string) => { const next = isSection(sec) ? sec : lastSection.current; lastSection.current = next; setSettingsAt(next); closeBoard(); }, [closeBoard]);
   const toggle = useCallback(() => (phase === "open" || phase === "opening" ? closeBoard() : openBoard()), [phase, openBoard, closeBoard]);
 
   // Keyboard: Ctrl+F opens + focuses search; Win+Alt+S is registered natively (Rust) later; Alt+Shift+S works in the browser preview.
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === "f") { e.preventDefault(); if (phase === "closed" || phase === "closing") openBoard(); setSearchTick((n) => n + 1); }
+      if (e.ctrlKey && e.key.toLowerCase() === "f" && !settingsAt) { e.preventDefault(); if (phase === "closed" || phase === "closing") openBoard(); setSearchTick((n) => n + 1); }
       if (e.altKey && e.shiftKey && e.key.toLowerCase() === "s") { e.preventDefault(); toggle(); }
+      if (e.key === "Escape" && settingsAt && !e.defaultPrevented && !document.querySelector(".modal, .palette, .menu, .selbar, .viewer")) { e.preventDefault(); setSettingsAt(null); }
     };
     addEventListener("keydown", k); return () => removeEventListener("keydown", k);
-  }, [phase, openBoard, toggle]);
+  }, [phase, openBoard, toggle, settingsAt]);
 
   // Paste anywhere (outside text fields) → capture.
   const ingest = useCallback(async (dt: DataTransfer) => {
@@ -125,9 +132,9 @@ export default function App() {
   const visible = phase !== "closed";
 
   return (
-    <MotionRoot speed={s?.animSpeed ?? 1}>
+    <MotionRoot speed={s ? motionSpeed(s) : 1}>
     <div className="stage" data-edge={place.edge}>
-      {visible && <div className="scrim" onPointerDown={() => { if (!fileDrag && !busy.current) closeBoard(); }} />}
+      {visible && <div className="scrim" onPointerDown={() => { if (!fileDrag && !busy.current && s?.closeOnBlur !== false) closeBoard(); }} />}
       {guide && ["left", "right", "top", "bottom"].map((e) => <div key={e} className={`guide ${e} ${e === guide ? "hot" : ""}`} />)}
 
       <div key={pulse} className={`handle ${vertical ? "v" : "h"} ${phase === "open" ? "active" : ""} ${live ? "dragging" : ""} ${pulse ? "pulse" : ""}`} data-edge={place.edge} data-unseen={unseen} role="button" tabIndex={0}
@@ -135,13 +142,18 @@ export default function App() {
         style={{ left: hr.x, top: hr.y, width: hr.w, height: hr.h }} onPointerDown={onHandleDown} onDragEnter={() => { if (fileDrag && phase === "closed") openBoard(); }}
         onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(); } }}><span /></div>
 
-      {visible && (
-        <section className={`board ${free ? "moving" : ""}`} data-state={phase} data-edge={place.edge} aria-label="MyPinboard"
-          style={{ left: br.x, top: br.y, width: br.w, height: br.h }}>
-          <Board store={store} width={br.w} dropping={fileDrag} onClose={closeBoard} gripProps={{ onPointerDown: onGripDown }} searchTick={searchTick} />
-        </section>
+      {visible && s && (
+        <Panel store={store} edge={place.edge} open={phase === "opening" || phase === "open"} dropping={fileDrag} searchTick={searchTick} mode="absolute" onClose={closeBoard} onOpenSettings={openSettings}
+          style={{ left: br.x, top: br.y, width: br.w, height: br.h }} gripProps={{ onPointerDown: onGripDown }} />
       )}
-      <Toast message={toast} />
+      {settingsAt && store.snap && <>
+        <div className="sa-window-scrim" onPointerDown={() => setSettingsAt(null)} />
+        <div className="sa-window" role="dialog" aria-label="MyPinboard settings">
+          <div className="sa-titlebar"><span>MyPinboard — Settings</span><button className="icon-btn" aria-label="Close settings window" onClick={() => setSettingsAt(null)}><Icon name="close" size={14} /></button></div>
+          <SettingsApp store={store} section={settingsAt} onSection={(x) => { lastSection.current = x; setSettingsAt(x); }} />
+        </div>
+      </>}
+      <Toast message={visible ? null : toast} />
     </div>
     </MotionRoot>
   );

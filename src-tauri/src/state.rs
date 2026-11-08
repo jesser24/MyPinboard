@@ -95,7 +95,13 @@ pub fn apply_settings(app: &AppHandle, new: Settings) -> Vec<String> {
     let mut warnings = vec![];
     if saved.shortcuts != old.shortcuts { warnings.extend(hotkeys::register_all(app, &saved)); }
     if saved.start_with_windows != old.start_with_windows { warnings.extend(sync_autostart(app, &saved)); }
-    if saved.theme != old.theme { shell::refresh_backdrop(app); }
+    if saved.theme != old.theme || saved.material() != old.material() { shell::refresh_backdrop(app); }
+    // Toggle position chosen in the settings window: adopt it as the placement (a drag saves through `save_placement`, which does not come through here).
+    if saved.edge != old.edge || (saved.offset - old.offset).abs() > 1e-9 {
+        let (mut p, _) = shell::current_placement(app); p.edge = saved.edge; p.offset = saved.offset;
+        save_placement(app, &p);
+        shell::refresh_layout(app);
+    } else if saved.panel_size() != old.panel_size() { shell::refresh_layout(app); }
     tray::refresh(app);
     let _ = app.emit("settings-changed", &saved);
     warnings

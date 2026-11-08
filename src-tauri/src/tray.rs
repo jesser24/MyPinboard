@@ -7,11 +7,12 @@ use tauri::AppHandle;
 fn make_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let s = state::settings(app);
     let open = MenuItem::with_id(app, "open", "Open board", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
     let paused = CheckMenuItem::with_id(app, "pause", "Pause capture", true, !s.capture.enabled, None::<&str>)?;
     let auto = CheckMenuItem::with_id(app, "autostart", "Start with Windows", !state::st(app).paths.portable, s.start_with_windows, None::<&str>)?;
     let data = MenuItem::with_id(app, "data", "Open data folder", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit MyPinboard", true, None::<&str>)?;
-    Menu::with_items(app, &[&open, &paused, &auto, &PredefinedMenuItem::separator(app)?, &data, &PredefinedMenuItem::separator(app)?, &quit])
+    Menu::with_items(app, &[&open, &settings, &paused, &auto, &PredefinedMenuItem::separator(app)?, &data, &PredefinedMenuItem::separator(app)?, &quit])
 }
 
 fn tooltip(app: &AppHandle) -> String { if state::settings(app).capture.enabled { "MyPinboard — capturing".into() } else { "MyPinboard — capture paused".into() } }
@@ -25,6 +26,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, ev| match ev.id.as_ref() {
             "open" => shell::show_board(app, true),
+            "settings" => shell::show_settings(app, None),
             "pause" => { let on = state::settings(app).capture.enabled; state::set_capture_enabled(app, !on); }
             "autostart" => { let mut s = state::settings(app); s.start_with_windows = !s.start_with_windows; let w = state::apply_settings(app, s); if let Some(m) = w.first() { state::notify(app, m); } }
             "data" => { let _ = crate::commands::open_data_dir_impl(app); }

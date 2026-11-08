@@ -29,6 +29,12 @@ export function boardSize(area: Area, edge: Edge): BoardSize {
   };
 }
 
+/** Floating-panel size: the user's width/height (320–480 × 380–700 dip), never more than 92 % of the screen. Mirrors `board_rect_sized` in the Rust core. */
+export function panelSize(area: Area, width: number, height: number): BoardSize {
+  const w = clamp(Number.isFinite(width) ? width : 380, 320, 480), h = clamp(Number.isFinite(height) ? height : 540, 380, 700);
+  return { width: Math.min(w, Math.floor(area.width * 0.92)), height: Math.min(h, Math.floor(area.height * 0.92)) };
+}
+
 export function density(board: BoardSize): Density {
   const shortSide = Math.min(board.width, board.height);
   if (shortSide < 480) return "compact";

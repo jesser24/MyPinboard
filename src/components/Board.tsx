@@ -19,7 +19,6 @@ import { SelectionBar } from "./SelectionBar";
 import { CommandPalette } from "./CommandPalette";
 import { ItemViewer } from "./ItemViewer";
 import { EmptyState, ErrorState } from "./EmptyState";
-import { SettingsPanel } from "./SettingsPanel";
 import { Confirm, Icon, Modal, Prompt } from "./Ui";
 
 type Dialog =
@@ -30,7 +29,8 @@ const NARROW = 560;
 const isField = (t: EventTarget | null) => !!(t as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable=true]");
 const toast = (m: string) => window.dispatchEvent(new CustomEvent("pb-toast", { detail: m }));
 
-interface Props { store: Store; width: number; dropping: boolean; onClose: () => void; gripProps: { onPointerDown: PointerEventHandler }; searchTick: number }
+/** The library: collections, favourites, tags, bulk actions and the command palette. It lives in the settings window, never in the floating panel. */
+interface Props { store: Store; width: number; dropping?: boolean; onClose?: () => void; gripProps?: { onPointerDown: PointerEventHandler }; searchTick?: number; onSettings: () => void }
 
 export function Board(props: Props) {
   const { store } = props;
@@ -38,11 +38,11 @@ export function Board(props: Props) {
   return <BoardView {...props} />;
 }
 
-function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: Props) {
+function BoardView({ store, width, dropping, onClose, gripProps, searchTick = 0, onSettings }: Props) {
   const snap = store.snap!; const { patchItem, patchMany, remove, copy, setSettings } = store; const s = snap.settings;
   const items = snap.items; const collections = snap.collections;
 
-  const [place, setPlace] = useState<Place>("all"); const [lastSection, setLastSection] = useState<SectionId>("all");
+  const [place, setPlace] = useState<SectionId>("all"); const [lastSection, setLastSection] = useState<SectionId>("all");
   const [text, setText] = useState(""); const q = useDebounced(text, 120);
   const [sort, setSort] = useState<SortKey>("recent"); const [date, setDate] = useState<DateRange>("any"); const [tag, setTag] = useState<string | undefined>();
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set()); const anchor = useRef<string | undefined>();
@@ -53,8 +53,7 @@ function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: P
 
   const narrow = width < NARROW;
   const sbMode: SidebarMode = narrow ? "rail" : s.sidebarCollapsed ? "rail" : "full";
-  const section: SectionId = place === "settings" ? lastSection : place;
-  const inSettings = place === "settings";
+  const section: SectionId = place;
   const names = useMemo(() => new Map(collections.map((c) => [c.id, c.name])), [collections]);
   const counts = useMemo(() => sectionCounts(items, collections), [items, collections]);
   const shown = useMemo(() => runQuery(items, queryFor({ section, text: q, date, sort, tag }, now), names), [items, section, q, date, sort, tag, names, now]);
@@ -68,9 +67,9 @@ function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: P
   useEffect(() => { setSelected((cur) => pruneSelection(cur, new Set(items.map((i) => i.id)))); }, [items]);
   useEffect(() => { const c = collectionOf(section); if (c !== undefined && !collections.some((x) => x.id === c)) { setPlace("all"); setLastSection("all"); } }, [section, collections]);
   // opening the board (or Ctrl+F) focuses search on the list view
-  useEffect(() => { setPlace((p) => (p === "settings" ? lastSection : p)); search.current?.focus(); search.current?.select(); }, [searchTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { search.current?.focus(); search.current?.select(); }, [searchTick]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const go = useCallback((p: Place) => { setPlace(p); if (p !== "settings") { setLastSection(p); setSelected(new Set()); setTag(undefined); } setDrawer(false); }, []);
+  const go = useCallback((p: Place) => { if (p === "settings") { onSettings(); setDrawer(false); return; } setPlace(p); setLastSection(p); setSelected(new Set()); setTag(undefined); setDrawer(false); }, [onSettings]);
   const clearSelection = useCallback(() => { setSelected(new Set()); anchor.current = undefined; }, []);
 
   // ---------- item actions ----------
@@ -136,20 +135,21 @@ function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: P
 
   // ---------- keyboard ----------
   const layerOpen = !!(menu || dialog || palette);
-  const kb = useRef({ layerOpen, selected, inSettings, text, drawer, onClose, shown });
-  kb.current = { layerOpen, selected, inSettings, text, drawer, onClose, shown };
+  const kb = useRef({ layerOpen, selected, text, drawer, onClose, shown, onSettings });
+  kb.current = { layerOpen, selected, text, drawer, onClose, shown, onSettings };
   useEffect(() => {
     const k = (e: KeyboardEvent) => {
       const c = kb.current;
       if (e.key === "Escape") {
         if (c.layerOpen && !(dialog)) return;                              // menu and palette close themselves
         if (dialog) { setDialog(null); return; }
-        if (c.drawer) setDrawer(false); else if (c.selected.size) clearSelection(); else if (c.inSettings) setPlace(lastSection); else if (c.text) setText(""); else c.onClose();
+        if (c.drawer) setDrawer(false); else if (c.selected.size) clearSelection(); else if (c.text) setText(""); else c.onClose?.();
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") { e.preventDefault(); if (!c.layerOpen) setPalette(true); return; }
-      if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); if (!c.layerOpen) setPlace((p) => (p === "settings" ? lastSection : "settings")); return; }
-      if (c.layerOpen || isField(e.target) || c.inSettings || e.altKey) return;
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") { e.preventDefault(); search.current?.focus(); search.current?.select(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key === ",") { e.preventDefault(); if (!c.layerOpen) c.onSettings(); return; }
+      if (c.layerOpen || isField(e.target) || e.altKey) return;
       const cardId = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>(".card")?.dataset.id;
       const focused = cardId ? byId(cardId) : undefined;
       const ts = targetsFor(focused);
@@ -201,7 +201,7 @@ function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: P
   const onEmptyAction = (id: "clear-search" | "clear-date" | "resume") => { if (id === "clear-search") { setText(""); search.current?.focus(); } else if (id === "clear-date") setDate("any"); else setSettings({ capture: { ...s.capture, enabled: true } }); };
 
   const sel = [...selected].map(byId).filter((x): x is PinItem => !!x);
-  const title = inSettings ? "Settings" : sectionTitle(section, collections);
+  const title = sectionTitle(section, collections);
   const toggleSidebar = () => { if (narrow) setDrawer((d) => !d); else setSettings({ sidebarCollapsed: !s.sidebarCollapsed }); };
 
   return (
@@ -212,15 +212,15 @@ function BoardView({ store, width, dropping, onClose, gripProps, searchTick }: P
 
       <div className="main">
         <header className="bar">
-          <button className="icon-btn grip" aria-label="Move board" title="Drag to move the board" {...gripProps}><Icon name="grip" /></button>
-          <h1 className="title">{title}{!inSettings && <small>{filtered ? `${shown.length} of ${counts[section] ?? items.length}` : shown.length}</small>}</h1>
+          {gripProps && <button className="icon-btn grip" aria-label="Move board" title="Drag to move the board" {...gripProps}><Icon name="grip" /></button>}
+          <h1 className="title">{title}<small>{filtered ? `${shown.length} of ${counts[section] ?? items.length}` : shown.length}</small></h1>
           <button className="icon-btn" aria-label="Command palette" title="Command palette (Ctrl+K)" onClick={() => setPalette(true)}><Icon name="command" /></button>
           <button className={`icon-btn ${paused ? "warn" : ""}`} aria-pressed={paused} aria-label={paused ? "Resume capture" : "Pause capture"} title={paused ? "Capture paused — click to resume" : "Pause capture"}
             onClick={() => setSettings({ capture: { ...s.capture, enabled: paused } })}><Icon name={paused ? "play" : "pause"} size={17} /></button>
-          <button className="icon-btn" aria-label="Close board" title="Close (Esc)" onClick={onClose}><Icon name="close" /></button>
+          {onClose && <button className="icon-btn" aria-label="Close board" title="Close (Esc)" onClick={onClose}><Icon name="close" /></button>}
         </header>
 
-        {inSettings ? <SettingsPanel store={store} /> : <>
+        {<>
           <div className="tools">
             <label className="search"><Icon name="search" size={15} />
               <input ref={search} value={text} onChange={(e) => setText(e.target.value)} placeholder={`Search ${section === "all" ? "everything" : title.toLowerCase()}`} title="Search (Ctrl+F)" aria-label="Search"
