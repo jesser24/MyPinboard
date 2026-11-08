@@ -3,7 +3,10 @@ import App from "./App";
 import { NativeBoard } from "./native/NativeBoard";
 import { NativeHandle } from "./native/NativeHandle";
 import { isNative, TauriBackend } from "./native/tauriBackend";
-import "./styles/app.css";
+import "./styles/tokens.css";
+import "./styles/handle.css";
+import "./styles/board.css";
+import "./styles/controls.css";
 
 const root = createRoot(document.getElementById("root")!);
 const which = new URLSearchParams(location.search).get("w");

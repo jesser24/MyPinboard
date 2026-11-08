@@ -64,21 +64,22 @@ with sync_playwright() as p:
     check("image card has a thumbnail", page.locator('.card[data-kind="image"] img').count() == 1)
 
     # --- search / filters ---
-    page.fill(".search input", "tauri"); check("search filters instantly", page.locator(".card").count() == 1)
-    page.fill(".search input", "client devis"); check("multi-token, accent-insensitive search", page.locator(".card").count() == 1)
-    page.fill(".search input", ""); page.click('.chip:has-text("Images")'); check("kind filter works", page.locator(".card").count() == 1); page.click('.chip:has-text("All")')
+    page.fill(".search input", "tauri"); page.wait_for_timeout(400); check("search filters (debounced 120 ms)", page.locator(".card").count() == 1)
+    page.fill(".search input", "client devis"); page.wait_for_timeout(400); check("multi-token, accent-insensitive search", page.locator(".card").count() == 1)
+    page.fill(".search input", ""); page.wait_for_timeout(250); page.click('[data-nav="images"]'); check("type section (Images) filters", page.locator(".card").count() == 1 and page.inner_text(".title").startswith("Images")); page.click('[data-nav="all"]')
 
     # --- context menu actions ---
-    card = page.locator('.card:has-text("Quarterly report.pdf")'); card.click(button="right"); page.click('.menu >> text=Pin')
+    card = page.locator('.card:has-text("Quarterly report.pdf")'); card.click(button="right"); page.click('.menu >> text=Pin'); page.wait_for_timeout(400)
+    check("moving between groups leaves no duplicate card behind", card.count() == 1, card.count())
     check("pin via context menu floats card first", page.locator(".card").first.get_attribute("aria-label").endswith("Quarterly report.pdf"))
     card.click(button="right"); page.click('.menu >> text=Favourite'); check("favourite flag shown", page.locator(".card .fav").count() == 1)
     card.click(button="right"); page.click('.menu >> text=Rename label'); page.fill(".modal input", "Q3 Report"); page.click('.modal button:has-text("Save")')
     check("rename label", page.locator('.card:has-text("Q3 Report")').count() == 1)
     card = page.locator('.card:has-text("Q3 Report")'); card.click(button="right"); page.click('.menu >> text=Add tag'); page.fill(".modal input", "Finance"); page.keyboard.press("Enter")
-    check("tag added and filterable", page.locator(".card .tag").count() == 1); page.locator(".card .tag").click(); check("tag filter", page.locator(".card").count() == 1); page.click('.chip:has-text("#finance")')
-    page.locator('.card:has-text("budget.xlsx")').click(button="right"); page.click('.menu >> text=Move to collection'); page.click('.submenu >> text=Work')
-    page.click('.tabs >> text=Work'); check("move to collection + collection filter", page.locator(".card").count() == 1); page.click('.tabs >> text=Work')
-    page.locator('.card:has-text("notes.md")').click(button="right"); page.click('.menu >> text=Remove from board'); page.click('.modal button:has-text("Remove")')
+    check("tag added and filterable", page.locator(".card .tag").count() == 1); page.locator(".card .tag").click(); check("tag filter", page.locator(".card").count() == 1); page.click('.chip button[aria-label^="Remove tag filter"]')
+    page.locator('.card:has-text("budget.xlsx")').click(button="right"); page.click('.menu >> text=Move to collection'); page.click('.menu >> text=Work')
+    page.click('[data-nav="c:work"]'); check("move to collection + collection section", page.locator(".card").count() == 1); page.click('[data-nav="all"]')
+    page.locator('.card:has-text("notes.md")').click(button="right"); page.click('.menu >> text=Remove from board'); page.click('.modal button:has-text("Remove")'); page.wait_for_timeout(400)
     check("remove (with confirmation)", page.locator('.card:has-text("notes.md")').count() == 0)
     page.locator('.card:has-text("react.dev")').first.click(); page.wait_for_timeout(200)
     check("single click copies to clipboard", "react.dev" in page.evaluate("navigator.clipboard.readText()"))
@@ -90,20 +91,70 @@ with sync_playwright() as p:
     check("pinned/favourite/rename persist", page.locator('.card:has-text("Q3 Report")').count() == 1 and page.locator(".card .fav").count() == 1)
 
     # --- settings ---
-    page.click('[aria-label="Settings"]'); page.click('.seg >> text=Light'); check("light theme applies", page.evaluate("document.documentElement.dataset.theme") == "light")
-    page.click('.seg >> text=Dark'); page.click('[aria-label="azure"]'); check("accent applies", page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--accent-a').trim()") == "#38bdf8")
+    page.click('[data-nav="settings"]'); page.click('.seg >> text=Light'); check("light theme applies", page.evaluate("document.documentElement.dataset.theme") == "light")
+    page.click('.seg >> text=Dark'); page.click('[aria-label="azure"]'); check("accent applies", page.evaluate("getComputedStyle(document.documentElement).getPropertyValue('--accent').trim()") == "#2f8cf0")
     page.fill('input[aria-invalid]:near(:text("Search"))', "Win+Alt+S") if False else None
-    inputs = page.locator('.settings .field input[aria-invalid]'); inputs.nth(1).fill("alt+win+s"); page.wait_for_timeout(100)
+    page.click('#tab-behavior'); inputs = page.locator('.settings input[aria-invalid]'); inputs.nth(1).fill("alt+win+s"); page.wait_for_timeout(100)
     check("shortcut conflict detected", page.locator(".warn-text").count() == 1); inputs.nth(1).fill("Win+Alt+P"); page.keyboard.press("Tab")
     check("conflict clears when fixed", page.locator(".warn-text").count() == 0)
     page.click('.settings .btn:has-text("Export backup")', no_wait_after=True) if False else None
+    page.click('#tab-storage')
     with page.expect_download() as d: page.click('text=Export backup')
     data = json.load(open(d.value.path())); check("backup export contains items+settings", data["app"] == "MyPinboard" and len(data["items"]) == 9 and "settings" in data)
-    page.click('text=Clear history'); page.click('.modal button:has-text("Clear")'); page.click(".settings .back"); page.wait_for_timeout(150)
+    page.click('#tab-privacy'); page.click('.btn.danger:has-text("Clear history")'); page.click('.modal .btn.danger'); page.click('[data-nav="all"]'); page.wait_for_timeout(250)
     check("clear history keeps pinned + favourite only", page.locator(".card").count() == 1, page.locator(".card").count())
-    page.click('[aria-label="Settings"]'); d.value.save_as(OUT + "/_backup.json")
-    page.set_input_files('input[type=file]', OUT + "/_backup.json"); page.wait_for_timeout(300); page.click(".settings .back")
+    page.click('[data-nav="settings"]'); page.click('#tab-storage'); d.value.save_as(OUT + "/_backup.json")
+    page.set_input_files('input[type=file]', OUT + "/_backup.json"); page.wait_for_timeout(300); page.click('[data-nav="all"]'); page.wait_for_timeout(200)
     check("restore from backup brings items back", page.locator(".card").count() == 9, page.locator(".card").count())
+
+
+    # --- redesign features ---
+    page.keyboard.press("Control+k"); page.wait_for_selector(".palette")
+    page.fill(".palette input", "dark"); page.wait_for_timeout(100); page.keyboard.press("Enter"); page.wait_for_timeout(400)
+    check("command palette (Ctrl+K) runs a command", page.evaluate("document.documentElement.dataset.theme") == "dark" and page.locator(".palette").count() == 0)
+    page.keyboard.press("Control+k"); page.wait_for_selector(".palette"); page.keyboard.press("Escape"); page.wait_for_timeout(250)
+    check("Escape closes only the palette, not the board", page.locator(".palette").count() == 0 and page.query_selector(".board") is not None)
+
+    page.click('[aria-label="Grid view"]'); page.wait_for_timeout(250)
+    check("grid view renders tiles with an image thumbnail", page.locator('.card[data-view="grid"]').count() == 9 and page.locator('.card[data-view="grid"] .thumb img').count() == 1)
+    page.click('[aria-label="List view"]'); page.wait_for_timeout(250)
+    check("list view restored", page.locator('.card[data-view="list"]').count() == 9)
+
+    page.locator(".card").nth(0).hover(); page.locator(".card .check").nth(0).click(); page.locator(".card").nth(1).hover(); page.locator(".card .check").nth(1).click()
+    check("multi-select shows the selection bar", page.inner_text(".selbar .count").startswith("2 selected"))
+    page.keyboard.press("Escape"); page.wait_for_timeout(450)
+    check("Escape clears the selection first (board stays open)", page.locator(".selbar").count() == 0 and page.query_selector(".board") is not None)
+    page.locator(".card").first.focus(); page.keyboard.press("Control+a"); check("Ctrl+A selects all visible", page.inner_text(".selbar .count").startswith("9 selected")); page.keyboard.press("Escape"); page.wait_for_timeout(250)
+
+    page.locator(".card").first.focus(); page.keyboard.press("ArrowDown")
+    check("arrow keys move focus between items", page.evaluate("document.activeElement === document.querySelectorAll('.card')[1]"))
+    page.keyboard.press("Space"); page.wait_for_selector(".modal"); check("Space opens the full-content viewer", page.locator(".modal .viewer-text").count() == 1); page.keyboard.press("Escape"); page.wait_for_timeout(250)
+
+    page.click('[aria-label="New collection"]'); page.fill(".modal input", "Research"); page.keyboard.press("Enter"); page.wait_for_timeout(250)
+    check("create collection opens it, with an empty state", page.inner_text(".title").startswith("Research") and "is empty" in page.inner_text(".empty h2"))
+    page.click('[data-nav^="c:"]:has-text("Research")', button="right"); page.click('.menu >> text=Rename'); page.fill(".modal input", "Reading"); page.click('.modal button:has-text("Save")'); page.wait_for_timeout(200)
+    check("rename collection", page.locator('[data-nav^="c:"]:has-text("Reading")').count() == 1)
+    page.click('[data-nav^="c:"]:has-text("Reading")', button="right"); page.click('.menu >> text=Delete collection'); page.click('.modal .btn.danger'); page.wait_for_timeout(250)
+    check("delete collection (confirmed) removes it and returns to All items", page.locator('[data-nav^="c:"]:has-text("Reading")').count() == 0 and page.inner_text(".title").startswith("All items"))
+
+    page.click('[data-nav="c:development"]'); page.wait_for_timeout(250); before = page.locator(".card").count(); page.click('[data-nav="all"]'); page.wait_for_timeout(250)
+    c0 = rect(page, ".card"); t0 = rect(page, '[data-nav="c:development"]')
+    page.mouse.move(c0["x"] + 120, c0["y"] + c0["h"] / 2); page.mouse.down(); page.mouse.move(c0["x"] + 60, c0["y"] + 40, steps=4); page.mouse.move(t0["x"] + t0["w"] / 2, t0["y"] + t0["h"] / 2, steps=8)
+    hot = page.locator('[data-nav="c:development"][data-drop="hot"]').count(); page.mouse.up(); page.wait_for_timeout(300)
+    page.click('[data-nav="c:development"]'); page.wait_for_timeout(250); after = page.locator(".card").count(); page.click('[data-nav="all"]'); page.wait_for_timeout(250)
+    check("dragging an item onto a collection files it there", hot == 1 and after == before + 1, f"hot={hot} {before}->{after}")
+
+    page.fill(".search input", "zzzzqq"); page.wait_for_timeout(250)
+    check("no-results empty state explains and offers a way out", "No matches" in page.inner_text(".empty h2") and page.locator('.empty .btn:has-text("Clear search")').count() == 1)
+    page.click('.empty .btn'); page.wait_for_timeout(250); check("clear search restores the list", page.locator(".card").count() == 9)
+
+    # --- handle: user-sized, new-item light, old settings migrate ---
+    page.keyboard.press("Escape"); page.wait_for_timeout(450)
+    page.evaluate(PASTE, {"text": "fresh item while closed"}); page.wait_for_timeout(200)
+    check("new item while closed lights the handle", page.get_attribute(".handle", "data-unseen") == "true")
+    page.click(".handle"); page.wait_for_selector('.board[data-state="open"]'); page.wait_for_timeout(200)
+    check("opening the board clears the handle light", page.get_attribute(".handle", "data-unseen") == "false")
+    page.keyboard.press("Escape"); page.wait_for_timeout(450)
 
     # --- moving the handle to every edge ---
     page.keyboard.press("Escape"); page.wait_for_timeout(500)
@@ -119,7 +170,7 @@ with sync_playwright() as p:
     hr = rect(page, ".handle"); page.mouse.move(hr["x"] + 5, hr["y"] + 36); page.mouse.down(); page.mouse.move(1277, 200, steps=6); page.mouse.up(); page.reload(); page.wait_for_selector(".handle"); h2 = rect(page, ".handle")
     check("handle position persists after restart", abs(h2["y"] + h2["h"] / 2 - 200) < 4 and h2["x"] > 1200, h2)
     # board move by grip
-    page.click(".handle"); page.wait_for_selector('.board[data-state="open"]'); g = rect(page, ".grip")
+    page.click(".handle"); page.wait_for_selector('.board[data-state="open"]'); page.wait_for_timeout(500); g = rect(page, ".grip")
     page.mouse.move(g["x"] + 10, g["y"] + 10); page.mouse.down(); page.mouse.move(40, 300, steps=8); page.mouse.up(); page.wait_for_timeout(500)
     check("dragging the board by its grip docks it to the nearest edge", page.get_attribute(".stage", "data-edge") == "left" and inside(rect(page, ".board"), 1280, 720))
     page.mouse.move(640, 360); check("moving board did not close it", page.query_selector(".board") is not None)
@@ -137,16 +188,17 @@ with sync_playwright() as p:
             pg.click(".handle"); pg.wait_for_selector('.board[data-state="open"]'); seed(pg); pg.wait_for_timeout(500)
             br_ = rect(pg, ".board"); hh = rect(pg, ".handle")
             # no clipped / overlapping content: every control inside the board, grid has no horizontal overflow
-            ov = pg.evaluate("""()=>{const b=document.querySelector('.board').getBoundingClientRect(); const bad=[...document.querySelectorAll('.board .bar *, .board .tabs, .board .filters, .board .foot')].filter(e=>{const r=e.getBoundingClientRect(); return r.width>0 && (r.right>b.right+1||r.left<b.left-1)}); const g=document.querySelector('.grid'); return {badControls:bad.length, gridOverflowX:g.scrollWidth>g.clientWidth+1}}""")
+            ov = pg.evaluate("""()=>{const b=document.querySelector('.board').getBoundingClientRect(); const bad=[...document.querySelectorAll('.board .bar *, .board .tools, .board .foot')].filter(e=>{const r=e.getBoundingClientRect(); return r.width>0 && (r.right>b.right+1||r.left<b.left-1)}); const g=document.querySelector('.list'); return {badControls:bad.length, gridOverflowX:g.scrollWidth>g.clientWidth+1}}""")
             check(f"[{scheme}] {name}: board within screen", inside(br_, w, hgt), br_); check(f"[{scheme}] {name}: no clipped controls / no horizontal grid overflow", ov["badControls"] == 0 and not ov["gridOverflowX"], ov)
-            sq = pg.evaluate("""()=>{ const bad=[]; document.querySelectorAll('.card').forEach(c=>{ const t=c.querySelector('.thumb').getBoundingClientRect(); const m=c.querySelector('.meta').getBoundingClientRect(); const cr=c.getBoundingClientRect();
-                if (c.scrollHeight>c.clientHeight+1 || m.bottom>cr.bottom+1) bad.push('squashed:'+c.getAttribute('aria-label')); const g=c.querySelector('.glyph b'); if(g){const r=g.getBoundingClientRect(); if(r.bottom>t.bottom+0.5||r.top<t.top-0.5) bad.push('label clipped:'+g.textContent)}
-                const sn=c.querySelector('.snippet'); if(sn && sn.scrollHeight>sn.clientHeight+1 && getComputedStyle(sn).webkitLineClamp==='none') bad.push('snippet clipped')}); return bad}""")
-            check(f"[{scheme}] {name}: cards not squashed, extension labels not clipped", not sq, sq[:3])
-            cols = pg.evaluate("getComputedStyle(document.querySelector('.grid')).gridTemplateColumns.split(' ').length")
+            sq = pg.evaluate("""()=>{ const bad=[]; document.querySelectorAll('.card').forEach(c=>{ const cr=c.getBoundingClientRect(); if (c.scrollHeight>c.clientHeight+1) bad.push('squashed:'+c.getAttribute('aria-label'));
+                const x=c.querySelector('.tile .ext'); if(x){const t=c.querySelector('.tile').getBoundingClientRect(), r=x.getBoundingClientRect(); if(r.bottom>t.bottom+0.5||r.top<t.top-0.5||r.right>t.right+0.5||r.left<t.left-0.5) bad.push('ext clipped:'+x.textContent)} }); return bad}""")
+            check(f"[{scheme}] {name}: rows not squashed, extension labels not clipped", not sq, sq[:3])
+            cols = pg.evaluate("document.querySelector('.side').dataset.mode")
+            tt = pg.evaluate("(()=>{const t=document.querySelector('.title'); return t.scrollWidth<=t.clientWidth+1})()")
+            check(f"[{scheme}] {name}: section title is never truncated", tt, pg.inner_text('.title'))
             if name in ("1280x720", "1920x1080", "2560x1440", "3840x2160") or scheme == "dark" and name in ("1080x1920-portrait", "3440x1440-ultrawide", "3840x2160@250pct"):
                 pg.screenshot(path=f"{OUT}/{scheme}-{name}.png")
-            print(f"     {scheme} {name}: board {int(br_['w'])}x{int(br_['h'])} cols={cols}")
+            print(f"     {scheme} {name}: board {int(br_['w'])}x{int(br_['h'])} sidebar={cols}")
             c2.close()
     check("no uncaught page errors or console errors", not errors, errors[:3])
     br.close()

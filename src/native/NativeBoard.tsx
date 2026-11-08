@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { ANIM_DURATION_MS, applySettings, type Settings } from "../lib/settings";
-import { baseFontPx, density as densityOf, gridColumns } from "../lib/layout";
+import { ANIM_DURATION_MS, applySettings, mergeSettings, type Settings } from "../lib/settings";
 import { useStore } from "../lib/store";
 import type { Edge } from "../lib/types";
 import { Board } from "../components/Board";
+import { MotionRoot } from "../components/Motion";
+import { Toast } from "../components/Toast";
 import type { TauriBackend } from "./tauriBackend";
 
 type Phase = "hidden" | "opening" | "open" | "closing";
@@ -45,7 +46,7 @@ export function NativeBoard({ backend }: { backend: TauriBackend }) {
     offs.push(listen("board-blur", () => { if (busy.current <= 0) closeRef.current(); }));
     offs.push(listen<boolean>("drop-state", (e) => setDropping(e.payload)));
     offs.push(listen<{ edge: Edge }>("placement", (e) => setEdge(e.payload.edge)));
-    offs.push(listen<Settings>("settings-changed", (e) => applySettings(e.payload)));
+    offs.push(listen<Settings>("settings-changed", (e) => applySettings(mergeSettings(e.payload))));
     offs.push(listen<string>("native-info-changed", (e) => { document.documentElement.dataset.backdrop = e.payload; }));
     invoke<Edge>("current_edge").then(setEdge);
     Promise.all(offs).then(() => invoke("board_ready")); // only now can Rust safely show us
@@ -65,15 +66,15 @@ export function NativeBoard({ backend }: { backend: TauriBackend }) {
     return () => { offs.forEach((p) => p.then((f) => f())); removeEventListener("pb-busy", busyFn); removeEventListener("resize", resize); removeEventListener("paste", paste); removeEventListener("keydown", keydown); };
   }, [backend, showToast]);
 
-  const dens = useMemo(() => densityOf(size), [size]);
-  if (!store.snap) return null;
   return (
+    <MotionRoot speed={store.snap?.settings.animSpeed ?? 1}>
     <div className="stage" data-edge={edge}>
       <section className="board native" data-state={phase === "hidden" ? "closing" : phase} data-edge={edge} aria-label="MyPinboard">
-        <Board store={store} cols={gridColumns(size.width, dens)} density={dens} fontPx={baseFontPx(size.width)} dropping={dropping} onClose={closeUi}
+        <Board store={store} width={size.width} dropping={dropping} onClose={closeUi}
           gripProps={{ onPointerDown: (e) => { if (e.button === 0) void invoke("begin_board_drag"); } }} searchTick={searchTick} />
       </section>
-      <div className={`toast ${toast ? "show" : ""}`} role="status" aria-live="polite">{toast}</div>
+      <Toast message={toast} />
     </div>
+    </MotionRoot>
   );
 }

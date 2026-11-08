@@ -1,30 +1,27 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { Collection, PinItem } from "../lib/types";
+import type { MenuEntry } from "./Menu";
 
-export interface MenuActions { copy(): void; open(): void; edit(): void; rename(): void; tag(): void; pin(): void; fav(): void; move(id: string): void; reveal(): void; remove(): void }
-export function ContextMenu({ item, collections, x, y, actions, onClose }: { item: PinItem; collections: Collection[]; x: number; y: number; actions: MenuActions; onClose: () => void }) {
-  const ref = useRef<HTMLDivElement>(null); const [pos, setPos] = useState({ x, y }); const [sub, setSub] = useState(false);
-  useLayoutEffect(() => { const r = ref.current!.getBoundingClientRect(); setPos({ x: Math.max(8, Math.min(x, innerWidth - r.width - 8)), y: Math.max(8, Math.min(y, innerHeight - r.height - 8)) }); }, [x, y]);
-  useEffect(() => { const k = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } }; addEventListener("keydown", k, true); return () => removeEventListener("keydown", k, true); }, [onClose]);
-  const run = (f: () => void) => () => { f(); onClose(); };
-  const native = item.kind === "file" || item.kind === "folder" || item.kind === "group";
-  return (
-    <div className="menu-scrim" onPointerDown={(e) => { e.stopPropagation(); onClose(); }} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
-      <div ref={ref} className="menu" role="menu" style={{ left: pos.x, top: pos.y }} onPointerDown={(e) => e.stopPropagation()}>
-        <button role="menuitem" onClick={run(actions.copy)}>Copy</button>
-        <button role="menuitem" onClick={run(actions.open)}>{item.kind === "url" ? "Open link" : item.kind === "text" ? "Edit text" : native ? "Open / Review" : "View"}</button>
-        {item.kind === "text" && <button role="menuitem" onClick={run(actions.edit)}>Edit…</button>}
-        {native && <button role="menuitem" onClick={run(actions.reveal)}>Show in folder</button>}
-        <hr />
-        <button role="menuitem" onClick={run(actions.pin)}>{item.pinned ? "Unpin" : "Pin"}</button>
-        <button role="menuitem" onClick={run(actions.fav)}>{item.favorite ? "Remove favourite" : "Favourite"}</button>
-        <button role="menuitem" onClick={run(actions.rename)}>Rename label…</button>
-        <button role="menuitem" onClick={run(actions.tag)}>Add tag…</button>
-        <button role="menuitem" aria-expanded={sub} onClick={() => setSub((s) => !s)}>Move to collection ▾</button>
-        {sub && <div className="submenu">{collections.map((c) => <button key={c.id} role="menuitem" disabled={c.id === item.collectionId} onClick={run(() => actions.move(c.id))}><i style={{ background: c.color }} />{c.name}</button>)}</div>}
-        <hr />
-        <button role="menuitem" className="danger" onClick={run(actions.remove)}>Remove from board</button>
-      </div>
-    </div>
-  );
+export interface ItemActions {
+  copy(): void; open(): void; view(): void; edit(): void; rename(): void; tag(): void; pin(): void; fav(): void; move(collectionId: string): void; reveal(): void; remove(): void;
+}
+
+/** The one coherent action set for an item, in the same order everywhere (context menu, "more" button, keyboard). */
+export function itemMenu(item: PinItem, collections: Collection[], a: ItemActions): MenuEntry[] {
+  const pathKind = item.kind === "file" || item.kind === "folder" || item.kind === "group";
+  const openLabel = item.kind === "url" ? "Open link" : item.kind === "image" ? "Preview" : item.kind === "text" ? "Edit text" : item.kind === "folder" ? "Open folder" : item.kind === "group" ? "Review files" : "Open file";
+  return [
+    { label: "Copy", icon: "copy", shortcut: "Enter", run: a.copy },
+    { label: openLabel, icon: item.kind === "url" ? "open" : "eye", run: a.open },
+    ...(item.kind !== "image" ? [{ label: "View full content", icon: "text" as const, shortcut: "Space", run: a.view }] : []),
+    ...(item.kind === "text" ? [{ label: "Edit…", icon: "edit" as const, run: a.edit }] : []),
+    ...(pathKind ? [{ label: "Show in folder", icon: "folder" as const, run: a.reveal }] : []),
+    "sep",
+    { label: item.pinned ? "Unpin" : "Pin", icon: item.pinned ? "unpin" : "pin", shortcut: "P", run: a.pin },
+    { label: item.favorite ? "Remove favourite" : "Favourite", icon: "star", shortcut: "F", run: a.fav },
+    { label: "Rename label…", icon: "edit", run: a.rename },
+    { label: "Add tag…", icon: "tag", run: a.tag },
+    { label: "Move to collection", icon: "move", submenu: collections.map((c) => ({ label: c.name, dot: c.color, disabled: c.id === item.collectionId, run: () => a.move(c.id) })) },
+    "sep",
+    { label: "Remove from board", icon: "trash", shortcut: "Del", danger: true, run: a.remove },
+  ];
 }
