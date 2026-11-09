@@ -54,6 +54,12 @@ impl Settings {
         let g = |k: &str, d: f64| self.extra.get(k).and_then(|v| v.as_f64()).filter(|v| v.is_finite()).unwrap_or(d);
         (g("panelWidth", 380.0).clamp(320.0, 480.0), g("panelHeight", 540.0).clamp(380.0, 700.0))
     }
+    /// Panel size for a docked edge. The stored width/height describe the vertical panel (left/right edge); on the top and bottom edge the
+    /// panel lies down, so the two swap. The edge is the single source of truth for orientation.
+    pub fn panel_size_for(&self, edge: Edge) -> (f64, f64) {
+        let (w, h) = self.panel_size();
+        if matches!(edge, Edge::Top | Edge::Bottom) { (h, w) } else { (w, h) }
+    }
     /// Native backdrop the user asked for: "auto" (Mica, else Acrylic), "acrylic", "mica" or "glass" (no native material).
     pub fn material(&self) -> &str { match self.extra.get("material").and_then(|v| v.as_str()) { Some(m @ ("acrylic" | "mica" | "glass")) => m, _ => "auto" } }
     pub fn is_excluded(&self, app: &str) -> bool { self.excluded_apps.iter().any(|e| e.eq_ignore_ascii_case(app)) }
@@ -89,6 +95,12 @@ mod tests {
         assert_eq!(with(json!({ "panelWidth": 100, "panelHeight": 9999 })).panel_size(), (320.0, 700.0));
         assert_eq!(with(json!({ "panelWidth": "wide", "panelHeight": null })).panel_size(), (380.0, 540.0));
         assert_eq!(with(json!({ "panelWidth": 410, "panelHeight": 600 })).panel_size(), (410.0, 600.0));
+    }
+    #[test] fn orientation_follows_the_edge_and_swaps_the_panel_size() {
+        let s = with(json!({ "panelWidth": 400, "panelHeight": 600 }));
+        for e in [Edge::Left, Edge::Right] { assert_eq!(s.panel_size_for(e), (400.0, 600.0), "vertical menu: tall panel"); }
+        for e in [Edge::Top, Edge::Bottom] { assert_eq!(s.panel_size_for(e), (600.0, 400.0), "horizontal menu: wide panel"); }
+        assert_eq!(Settings::default().panel_size_for(Edge::Top), (540.0, 380.0));
     }
     #[test] fn material_accepts_only_known_values() {
         for m in ["acrylic", "mica", "glass"] { assert_eq!(with(json!({ "material": m })).material(), m); }

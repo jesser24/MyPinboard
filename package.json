@@ -9,7 +9,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "tauri": "tauri",
-    "e2e:browser": "python3 scripts/e2e_browser.py http://localhost:4173/ shots && python3 scripts/e2e_library.py http://localhost:4173/ shots"
+    "e2e:browser": "python3 scripts/e2e_browser.py http://localhost:4173/ shots && python3 scripts/e2e_library.py http://localhost:4173/ shots && python3 scripts/e2e_native_mock.py http://localhost:4173/"
   },
   "dependencies": {
     "@tauri-apps/api": "2.12.4",

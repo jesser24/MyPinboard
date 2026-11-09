@@ -36,7 +36,7 @@ export function Appearance({ store, native }: { store: Store; native: boolean })
       <Row col label="Corner radius" hint={native ? "Windows rounds Mica and Acrylic panels itself (8 px). Choose Glass to use your own radius." : undefined}><Slider label="Corner radius" value={s.panelRadius} min={8} max={28} step={1} unit=" px" onChange={(v) => set({ panelRadius: v })} /></Row>
     </Group>
 
-    <Group title="Panel size">
+    <Group title="Panel size" note="These describe the panel on the left or right edge. On the top or bottom edge the panel lies down: items run in a row and width and height swap.">
       <Row col label="Width" hint="The panel never grows beyond the screen."><Slider label="Panel width" value={s.panelWidth} min={PANEL_LIMITS.minW} max={PANEL_LIMITS.maxW} step={10} unit=" px" onChange={(v) => set({ panelWidth: v })} /></Row>
       <Row col label="Height"><Slider label="Panel height" value={s.panelHeight} min={PANEL_LIMITS.minH} max={PANEL_LIMITS.maxH} step={10} unit=" px" onChange={(v) => set({ panelHeight: v })} /></Row>
       <div className="row"><button className="btn small" onClick={() => set({ panelWidth: DEFAULT_SETTINGS.panelWidth, panelHeight: DEFAULT_SETTINGS.panelHeight, transparency: DEFAULT_SETTINGS.transparency, blur: DEFAULT_SETTINGS.blur, panelRadius: DEFAULT_SETTINGS.panelRadius, borderOpacity: DEFAULT_SETTINGS.borderOpacity, shadowIntensity: DEFAULT_SETTINGS.shadowIntensity, panelTint: "", material: "auto" })}>Reset panel appearance</button></div>

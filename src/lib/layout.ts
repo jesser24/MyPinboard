@@ -29,10 +29,18 @@ export function boardSize(area: Area, edge: Edge): BoardSize {
   };
 }
 
-/** Floating-panel size: the user's width/height (320–480 × 380–700 dip), never more than 92 % of the screen. Mirrors `board_rect_sized` in the Rust core. */
-export function panelSize(area: Area, width: number, height: number): BoardSize {
+/** Orientation of the menu. The docked edge is the single source of truth: top/bottom = horizontal, left/right = vertical. */
+export type Orientation = "horizontal" | "vertical";
+export const orientationOf = (edge: Edge): Orientation => (edge === "top" || edge === "bottom" ? "horizontal" : "vertical");
+
+/**
+ * Floating-panel size for a docked edge. The stored width/height (320–480 × 380–700 dip) describe the vertical panel; on the top and bottom
+ * edge the panel lies down, so the two swap. Never more than 92 % of the screen. Mirrors `Settings::panel_size_for` + `board_rect_sized` in the Rust core.
+ */
+export function panelSize(area: Area, edge: Edge, width: number, height: number): BoardSize {
   const w = clamp(Number.isFinite(width) ? width : 380, 320, 480), h = clamp(Number.isFinite(height) ? height : 540, 380, 700);
-  return { width: Math.min(w, Math.floor(area.width * 0.92)), height: Math.min(h, Math.floor(area.height * 0.92)) };
+  const [pw, ph] = orientationOf(edge) === "horizontal" ? [h, w] : [w, h];
+  return { width: Math.min(pw, Math.floor(area.width * 0.92)), height: Math.min(ph, Math.floor(area.height * 0.92)) };
 }
 
 export function density(board: BoardSize): Density {

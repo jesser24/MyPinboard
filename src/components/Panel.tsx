@@ -4,6 +4,7 @@ import type { Store } from "../lib/store";
 import type { Edge, PinItem } from "../lib/types";
 import { runQuery } from "../lib/search";
 import { panelAnimation } from "../lib/panelAnim";
+import { orientationOf } from "../lib/layout";
 import { useDebounced } from "../lib/hooks";
 import { Icon } from "./Ui";
 import { PanelItem } from "./PanelItem";
@@ -39,6 +40,8 @@ export function Panel({ store, edge, open, onClose, onOpenSettings, dropping, se
   const shown = all.slice(0, limit);
   useEffect(() => setLimit(PAGE), [q]);
   const animate = shown.length <= 60;
+  /** Single source of truth: the docked edge. Horizontal menu (top/bottom) lays the items out in a row; vertical (left/right) in a column. */
+  const orientation = orientationOf(edge); const horizontal = orientation === "horizontal";
   const paused = !s.capture.enabled;
 
   const flash = useCallback((text: string, ms: number, undo = false) => { clearTimeout(noteTimer.current); setNote((p) => ({ text, undo, n: (p?.n ?? 0) + 1 })); noteTimer.current = window.setTimeout(() => setNote(null), ms); }, []);
@@ -74,9 +77,11 @@ export function Panel({ store, edge, open, onClose, onOpenSettings, dropping, se
     if (e.key === "ArrowDown" && inField) { e.preventDefault(); list.current?.querySelector<HTMLElement>(".pi")?.focus(); return; }
     if (t.classList.contains("pi")) {
       const rows = Array.from(list.current?.querySelectorAll<HTMLElement>(".pi") ?? []); const at = rows.indexOf(t); let to = -1;
-      if (e.key === "ArrowDown") to = Math.min(rows.length - 1, at + 1); else if (e.key === "ArrowUp") to = at - 1; else if (e.key === "Home") to = 0; else if (e.key === "End") to = rows.length - 1;
-      if (to >= 0) { e.preventDefault(); if (to < 0) search.current?.focus(); else { rows[to]?.focus(); rows[to]?.scrollIntoView({ block: "nearest" }); } }
-      if (e.key === "ArrowUp" && at === 0) { e.preventDefault(); search.current?.focus(); }
+      const next = horizontal ? "ArrowRight" : "ArrowDown", prev = horizontal ? "ArrowLeft" : "ArrowUp";
+      if (e.key === next) to = Math.min(rows.length - 1, at + 1); else if (e.key === prev) to = at - 1; else if (e.key === "Home") to = 0; else if (e.key === "End") to = rows.length - 1;
+      // the first item's "previous" (and, in a row, Up) goes back to the search field
+      if (to < 0 && (e.key === prev || (horizontal && e.key === "ArrowUp")) && at <= 0) { e.preventDefault(); search.current?.focus(); return; }
+      if (to >= 0) { e.preventDefault(); rows[to]?.focus(); rows[to]?.scrollIntoView({ block: "nearest", inline: "nearest" }); }
     }
   };
 
@@ -84,7 +89,7 @@ export function Panel({ store, edge, open, onClose, onOpenSettings, dropping, se
   const tabId = shown[0]?.id;
 
   return (
-    <m.section className={`panel ${mode}`} data-native={native || undefined} data-edge={edge} aria-label="MyPinboard clipboard" style={{ transformOrigin: anim.origin, ...style }}
+    <m.section className={`panel ${mode}`} data-native={native || undefined} data-edge={edge} data-orientation={orientation} aria-label="MyPinboard clipboard" style={{ transformOrigin: anim.origin, ...style }}
       initial="closed" animate={open ? "open" : "closed"}
       variants={{ closed: { ...anim.closed, transition: anim.leave }, open: { ...anim.open, transition: anim.enter } }} onKeyDown={onKeyDown}>
       <header className="p-head">
@@ -102,7 +107,7 @@ export function Panel({ store, edge, open, onClose, onOpenSettings, dropping, se
         </label>
       </header>
 
-      <div className="p-list" ref={list} role="list" aria-label="Clipboard items">
+      <div className="p-list" ref={list} role="list" aria-label="Clipboard items" aria-orientation={orientation}>
         {store.error && !snap.items.length
           ? <div className="p-empty" role="alert"><div className="art"><Icon name="about" size={20} /></div><b>Couldn’t load your items</b><span>Your data was not changed.</span><button className="btn small" onClick={store.retry}>Try again</button></div>
           : shown.length === 0

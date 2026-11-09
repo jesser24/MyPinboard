@@ -26,12 +26,12 @@ export interface PanelAnim {
  * `enabled = false` (animation switched off) yields an instant swap. Transform-based entries are dropped by the OS reduced-motion setting (see MotionRoot).
  */
 export function panelAnimation(id: AnimationId, edge: Edge, ms: number, enabled = true): PanelAnim {
-  const [dx, dy] = DIR[edge];
+  const [dx, dy] = DIR[edge] ?? DIR.right;
   const dur = Math.max(0.05, ms / 1000);
   const ease = [0.2, 0.8, 0.2, 1];
   const tween = { duration: dur, ease };
   const leave = { duration: dur * 0.7, ease };
-  const origin = ORIGIN[edge];
+  const origin = ORIGIN[edge] ?? ORIGIN.right;
   const NONE = { x: 0, y: 0, scale: 1, opacity: 1, filter: "blur(0px)" };
   if (!enabled || id === "instant") return { closed: { opacity: 0, x: 0, y: 0, scale: 1, filter: "blur(0px)" }, open: NONE, enter: { duration: 0 }, leave: { duration: 0 }, origin };
   switch (id) {

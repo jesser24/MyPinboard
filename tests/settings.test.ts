@@ -50,7 +50,7 @@ describe("panelAnimation", () => {
 });
 
 import { closeMs, motionSpeed } from "../src/lib/settings";
-import { panelSize } from "../src/lib/layout";
+import { orientationOf, panelSize } from "../src/lib/layout";
 describe("motion helpers", () => {
   it("motionSpeed: off stays off, shorter durations speed small animations up", () => {
     expect(motionSpeed({ animSpeed: 0, animDuration: 280 })).toBe(0);
@@ -60,14 +60,20 @@ describe("motion helpers", () => {
   });
   it("closeMs waits for the closing animation, and is 0 when animation is off", () => { expect(closeMs({ animSpeed: 0, animDuration: 400 })).toBe(0); expect(closeMs({ animSpeed: 1, animDuration: 400 })).toBe(320); });
 });
-describe("panelSize", () => {
-  it("uses the requested size inside the 320–480 × 380–700 limits", () => {
-    expect(panelSize({ width: 1920, height: 1080 }, 380, 540)).toEqual({ width: 380, height: 540 });
-    expect(panelSize({ width: 1920, height: 1080 }, 9999, 1)).toEqual({ width: 480, height: 380 });
+describe("panelSize and orientation", () => {
+  const big = { width: 1920, height: 1080 };
+  it("vertical edges use the stored width × height", () => { for (const e of ["left", "right"] as const) expect(panelSize(big, e, 380, 540)).toEqual({ width: 380, height: 540 }); });
+  it("horizontal edges lie the panel down (width and height swap)", () => { for (const e of ["top", "bottom"] as const) expect(panelSize(big, e, 380, 540)).toEqual({ width: 540, height: 380 }); });
+  it("orientation comes from the edge alone", () => { expect(orientationOf("top")).toBe("horizontal"); expect(orientationOf("bottom")).toBe("horizontal"); expect(orientationOf("left")).toBe("vertical"); expect(orientationOf("right")).toBe("vertical"); });
+  it("respects the stored limits before swapping", () => {
+    expect(panelSize(big, "right", 9999, 1)).toEqual({ width: 480, height: 380 });
+    expect(panelSize(big, "top", 9999, 1)).toEqual({ width: 380, height: 480 });
+    expect(panelSize(big, "bottom", 9999, 9999)).toEqual({ width: 700, height: 480 });
   });
   it("never exceeds the screen (92 %)", () => {
-    expect(panelSize({ width: 360, height: 640 }, 480, 700)).toEqual({ width: 331, height: 588 });
-    expect(panelSize({ width: 1280, height: 600 }, 380, 540)).toEqual({ width: 380, height: 540 });
+    expect(panelSize({ width: 360, height: 640 }, "right", 480, 700)).toEqual({ width: 331, height: 588 });
+    expect(panelSize({ width: 1280, height: 600 }, "top", 380, 540)).toEqual({ width: 540, height: 380 });
+    expect(panelSize({ width: 1280, height: 300 }, "top", 380, 540)).toEqual({ width: 540, height: 276 });
   });
-  it("falls back to the defaults for garbage input", () => expect(panelSize({ width: 1920, height: 1080 }, NaN, NaN)).toEqual({ width: 380, height: 540 }));
+  it("falls back to the defaults for garbage input", () => expect(panelSize(big, "right", NaN, NaN)).toEqual({ width: 380, height: 540 }));
 });

@@ -98,3 +98,18 @@ html[data-backdrop="none"] .panel[data-native] { box-shadow: none; }
 .p-drop { position: absolute; inset: 6px; z-index: 8; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-radius: calc(var(--panel-r, 20px) - 4px); border: 2px dashed var(--accent); background: color-mix(in srgb, var(--accent) 14%, rgb(var(--bg-rgb) / .86)); color: var(--accent-ink); pointer-events: none; }
 
 html[data-native="board"] .toast-wrap { bottom: 46px; }
+
+/* ---------------------------------------------------------------------------------------------------
+   Orientation. The docked edge decides: top/bottom = horizontal menu (wide panel, items in a row),
+   left/right = vertical menu (tall panel, items in a column). Same cards, same spacing, same delete button.
+   --------------------------------------------------------------------------------------------------- */
+.panel[data-orientation="horizontal"] .p-list { display: flex; flex-direction: row; align-items: stretch; gap: 6px; overflow-x: auto; overflow-y: hidden; padding: 4px 12px 12px;
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 14px), transparent); }
+.panel[data-orientation="horizontal"] .pi { flex: 0 0 236px; width: 236px; min-width: 0; margin: 0; align-content: start; overflow: hidden; }
+.panel[data-orientation="horizontal"] .pi[data-kind="image"] { flex-basis: 236px; }
+.panel[data-orientation="horizontal"] .pi-img img { max-height: 150px; }
+.panel[data-orientation="horizontal"] .p-more { flex: none; align-self: center; margin: 0 6px; }
+.panel[data-orientation="horizontal"] .p-empty { flex: 1 0 100%; min-height: 0; }
+.panel[data-orientation="horizontal"] .p-list::-webkit-scrollbar { height: 8px; }
+.panel.static[data-orientation="horizontal"] { width: var(--panel-h, 540px); height: var(--panel-w, 380px); }
+.panel[data-orientation="horizontal"] .p-note { bottom: 48px; }

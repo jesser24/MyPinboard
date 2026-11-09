@@ -72,9 +72,9 @@ pub fn board_size_logical(aw: f64, ah: f64, edge: Edge) -> (f64, f64) {
     (w.min((aw * 0.92).floor()), h.min((ah * 0.92).floor()))
 }
 
-/// The floating panel's size in dip: the user's width × height, clamped to 320–480 × 380–700 and never more than 92 % of the screen.
+/// The floating panel's size in dip (already oriented for its edge by `Settings::panel_size_for`): never below 320 or above 700 on either side, and never more than 92 % of the screen.
 pub fn panel_size_logical(aw: f64, ah: f64, w: f64, h: f64) -> (f64, f64) {
-    (clamp(w, 320.0, 480.0).min((aw * 0.92).floor()), clamp(h, 380.0, 700.0).min((ah * 0.92).floor()))
+    (clamp(w, 320.0, 700.0).min((aw * 0.92).floor()), clamp(h, 320.0, 700.0).min((ah * 0.92).floor()))
 }
 
 pub fn board_rect(p: &Placement, m: &MonitorInfo) -> PRect { board_rect_sized(p, m, None) }
@@ -142,7 +142,7 @@ mod tests {
         }}}}
     }
     #[test] fn user_sized_panel_stays_on_screen_and_clear_of_the_handle() {
-        for (name, mons) in setups() { for m in &mons { for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] { for o in [0.0, 0.5, 1.0, f64::NAN] { for size in [(380.0, 540.0), (480.0, 700.0), (320.0, 380.0), (9999.0, 9999.0)] {
+        for (name, mons) in setups() { for m in &mons { for edge in [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right] { for o in [0.0, 0.5, 1.0, f64::NAN] { for size in [(380.0, 540.0), (540.0, 380.0), (700.0, 480.0), (480.0, 700.0), (320.0, 380.0), (9999.0, 9999.0)] {
             let p = Placement { monitor: m.id.clone(), edge, offset: o };
             let h = handle_window_rect(&p, m); let b = board_rect_sized(&p, m, Some(size));
             assert!(inside(&b, m), "{name} {edge:?} {size:?}: {b:?} not in {m:?}");
@@ -151,7 +151,8 @@ mod tests {
     }
     #[test] fn panel_size_respects_limits_and_screen() {
         assert_eq!(panel_size_logical(1920.0, 1080.0, 380.0, 540.0), (380.0, 540.0));
-        assert_eq!(panel_size_logical(1920.0, 1080.0, 9999.0, 1.0), (480.0, 380.0));
+        assert_eq!(panel_size_logical(1920.0, 1080.0, 9999.0, 1.0), (700.0, 320.0));
+        assert_eq!(panel_size_logical(1920.0, 1080.0, 540.0, 380.0), (540.0, 380.0), "a horizontal panel keeps its landscape size");
         assert_eq!(panel_size_logical(360.0, 640.0, 480.0, 700.0), (331.0, 588.0));
     }
     #[test] fn default_size_is_unchanged_when_no_user_size() {

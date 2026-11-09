@@ -37,6 +37,7 @@ jobs:
           sleep 4
           python scripts/e2e_browser.py http://localhost:4173/ shots | tee e2e.log
           python scripts/e2e_library.py http://localhost:4173/ shots | tee -a e2e.log
+          python scripts/e2e_native_mock.py http://localhost:4173/ | tee -a e2e.log
       - uses: actions/upload-artifact@v4
         if: always()
         with: { name: browser-preview-results, path: "shots/\ne2e.log" }

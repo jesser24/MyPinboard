@@ -46,7 +46,7 @@ export default function App() {
   const timers = useRef<number[]>([]);
 
   const place = live ?? (s ? recoverPlacement(s.edge, s.offset, area) : { edge: "right" as Edge, offset: 0.5 });
-  const size = useMemo(() => panelSize(area, s?.panelWidth ?? 380, s?.panelHeight ?? 540), [area, s?.panelWidth, s?.panelHeight]);
+  const size = useMemo(() => panelSize(area, place.edge, s?.panelWidth ?? 380, s?.panelHeight ?? 540), [area, place.edge, s?.panelWidth, s?.panelHeight]);
   const rect = boardRect(place.edge, place.offset, area, size);
   const dur = s ? closeMs(s) : 0;
 
