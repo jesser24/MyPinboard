@@ -37,7 +37,9 @@ pub fn remove_items(s: S, ids: Vec<String>) -> R<()> {
 }
 #[tauri::command(async)] pub fn save_collections(s: S, collections: Vec<Collection>) -> R<()> { s.db.guard().save_collections(&collections).map_err(e) }
 /// Open (or focus) the separate settings window, optionally at a section.
-#[tauri::command] pub fn open_settings(app: AppHandle, section: Option<String>) { shell::show_settings(&app, section); }
+/// MUST stay `async`: a synchronous command runs on the main thread, and building a webview window there deadlocks on Windows
+/// (WebView2 needs the main loop to finish creating the window). That froze every window and left the settings window white.
+#[tauri::command(async)] pub fn open_settings(app: AppHandle, section: Option<String>) { shell::show_settings(&app, section); }
 #[tauri::command(async)] pub fn save_settings(app: AppHandle, settings: Settings) -> R<Vec<String>> { Ok(state::apply_settings(&app, settings)) }
 
 #[tauri::command(async)]

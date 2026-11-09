@@ -26,7 +26,8 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, ev| match ev.id.as_ref() {
             "open" => shell::show_board(app, true),
-            "settings" => shell::show_settings(app, None),
+            // Event handlers run on the main thread: creating a window here deadlocks on Windows, so hand it to a worker thread.
+            "settings" => { let app = app.clone(); std::thread::spawn(move || shell::show_settings(&app, None)); }
             "pause" => { let on = state::settings(app).capture.enabled; state::set_capture_enabled(app, !on); }
             "autostart" => { let mut s = state::settings(app); s.start_with_windows = !s.start_with_windows; let w = state::apply_settings(app, s); if let Some(m) = w.first() { state::notify(app, m); } }
             "data" => { let _ = crate::commands::open_data_dir_impl(app); }

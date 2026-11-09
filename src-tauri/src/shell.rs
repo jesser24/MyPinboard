@@ -85,12 +85,12 @@ pub fn schedule_display_refresh(app: &AppHandle) {
 
 fn place_board(app: &AppHandle, w: &WebviewWindow) {
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect_sized(&p, m, Some(state::settings(app).panel_size())), true); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { set_rect_settled(w, board_rect_sized(&p, m, Some(state::settings(app).panel_size_for(p.edge))), true); }
 }
 /// Re-fit the board's visible frame without moving it first (the frame can only be measured reliably once the window is shown).
 fn fit_board(app: &AppHandle, w: &WebviewWindow) {
     let (p, mons) = current_placement(app);
-    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { let r = board_rect_sized(&p, m, Some(state::settings(app).panel_size())); let _ = platform::fit_visible_rect(w, r.x, r.y, r.w, r.h); }
+    if let Some(m) = mons.iter().find(|m| m.id == p.monitor) { let r = board_rect_sized(&p, m, Some(state::settings(app).panel_size_for(p.edge))); let _ = platform::fit_visible_rect(w, r.x, r.y, r.w, r.h); }
 }
 /// Give the board the real OS keyboard focus (needed for Escape and typing), even when another app is in the foreground.
 fn focus_board(w: &WebviewWindow) { let _ = w.set_focus(); platform::focus_window(w); }
@@ -124,6 +124,7 @@ pub fn refresh_layout(app: &AppHandle) {
 }
 
 /// The separate MyPinboard window (settings + library). Created on demand; `section` picks the page ("appearance", "toggle", "library", ...).
+/// Never call this on the main thread or from a synchronous command (see `commands::open_settings`).
 pub fn show_settings(app: &AppHandle, section: Option<String>) {
     let section = section.filter(|s| !s.is_empty() && s.len() <= 16 && s.chars().all(|c| c.is_ascii_lowercase()));
     let w = match app.get_webview_window(SETTINGS) {

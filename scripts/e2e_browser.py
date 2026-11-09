@@ -291,6 +291,55 @@ with sync_playwright() as p:
     open_panel(page); g = rect(page, ".p-brand"); page.mouse.move(g["x"] + 20, g["y"] + 10); page.mouse.down(); page.mouse.move(40, 300, steps=8); page.mouse.up(); page.wait_for_timeout(500)
     check("dragging the panel by its header docks it to the nearest edge", page.get_attribute(".stage", "data-edge") == "left" and inside(rect(page, ".panel"), 1280, 720)); c.close()
 
+    # ================= orientation: the docked edge decides (top/bottom = horizontal menu, left/right = vertical) =================
+    def layout(pg):
+        return pg.evaluate("""()=>{const r=[...document.querySelectorAll('.panel:not(.static) .pi')].map(e=>{const b=e.getBoundingClientRect(); return [Math.round(b.x),Math.round(b.y),Math.round(b.width),Math.round(b.height)]});
+          const l=document.querySelector('.panel:not(.static) .p-list'); const p=document.querySelector('.panel:not(.static)').getBoundingClientRect();
+          return {rects:r, orient:document.querySelector('.panel:not(.static)').dataset.orientation, dir:getComputedStyle(l).flexDirection, sw:l.scrollWidth, cw:l.clientWidth, sh:l.scrollHeight, ch:l.clientHeight, panel:[p.width,p.height]}}""")
+    c, pg = fresh(br, settings={"edge": "right"}); open_panel(pg); seed(pg); pg.wait_for_timeout(500); L = layout(pg)
+    check("vertical menu (right edge): items are stacked in a column", L["orient"] == "vertical" and all(L["rects"][i + 1][1] > L["rects"][i][1] for i in range(len(L["rects"]) - 1)) and len({r[0] for r in L["rects"]}) == 1, L["orient"])
+    check("vertical menu: panel is 380 × 540", abs(L["panel"][0] - 380) < 1 and abs(L["panel"][1] - 540) < 1, L["panel"]); c.close()
+    for edge in ("bottom", "top"):
+        c, pg = fresh(br, settings={"edge": edge}); open_panel(pg); seed(pg); pg.wait_for_timeout(500); L = layout(pg); pr = rect(pg, ".panel")
+        rows = L["rects"]; same_row = len({r[1] for r in rows if r[3] > 0}) == 1
+        check(f"horizontal menu ({edge} edge): items are laid out in a row", L["orient"] == "horizontal" and L["dir"] == "row" and same_row and all(rows[i + 1][0] > rows[i][0] for i in range(len(rows) - 1)), (L["orient"], L["dir"]))
+        check(f"horizontal menu ({edge}): panel lies down (540 × 380) and stays on screen", abs(pr["w"] - 540) < 1 and abs(pr["h"] - 380) < 1 and inside(pr, 1440, 900), pr)
+        check(f"horizontal menu ({edge}): the row scrolls sideways, nothing overflows vertically", L["sw"] > L["cw"] and L["sh"] <= L["ch"] + 1, (L["sw"], L["cw"], L["sh"], L["ch"]))
+        check(f"horizontal menu ({edge}): cards keep their delete button, time and preview", pg.locator(".pi .pi-del").count() == 10 and pg.locator(".pi time").count() == 10 and pg.locator(".pi[data-kind=image] img").count() == 1)
+        d = pg.evaluate("(()=>{const c=document.querySelector('.pi').getBoundingClientRect(), b=document.querySelector('.pi .pi-del').getBoundingClientRect(); return [b.right<=c.right+0.5, b.top>=c.top-0.5, b.top-c.top<16]})()")
+        check(f"horizontal menu ({edge}): the trash button is still in the card's top-right corner", all(d), d)
+        hdr = pg.evaluate("(()=>{const p=document.querySelector('.panel').getBoundingClientRect(); return [...document.querySelectorAll('.p-head *, .p-foot *')].filter(e=>{const r=e.getBoundingClientRect(); return r.width>0&&(r.right>p.right+1||r.left<p.left-1)}).length})()")
+        check(f"horizontal menu ({edge}): header and footer do not clip", hdr == 0, hdr)
+        pg.locator(".pi").first.focus(); pg.keyboard.press("ArrowRight"); k1 = pg.evaluate("[...document.querySelectorAll('.pi')].indexOf(document.activeElement)"); pg.keyboard.press("ArrowLeft"); k0 = pg.evaluate("[...document.querySelectorAll('.pi')].indexOf(document.activeElement)")
+        check(f"horizontal menu ({edge}): Left/Right arrows move between items", (k1, k0) == (1, 0), (k1, k0))
+        before = pg.locator(".pi").count(); pg.locator(".pi").nth(2).hover(); pg.locator(".pi").nth(2).locator(".pi-del").click(); pg.wait_for_timeout(450)
+        check(f"horizontal menu ({edge}): one-click delete and Undo still work", pg.locator(".pi").count() == before - 1 and pg.locator(".p-undo").count() == 1)
+        pg.click(".p-undo"); pg.wait_for_timeout(450); check(f"horizontal menu ({edge}): undo restores the card", pg.locator(".pi").count() == before)
+        if edge == "bottom": pg.screenshot(path=OUT + "/orientation-horizontal.png")
+        c.close()
+    # live: changing the setting switches the layout with no restart
+    c, pg = fresh(br, settings={}); pg.goto(URL + "?settings=toggle"); pg.wait_for_selector(".sa-window")
+    for edge_label, want in (("Top", "horizontal"), ("Left", "vertical"), ("Bottom", "horizontal"), ("Right", "vertical")):
+        pg.click(f'[aria-label="Screen edge"] >> text={edge_label}'); pg.wait_for_timeout(250)
+        check(f"settings preview follows the screen edge setting live ({edge_label} → {want})", pg.evaluate("document.querySelector('.sa-window .sa-preview .panel')?.dataset.orientation ?? null") in (want, None) and store(pg)["settings"]["edge"] == edge_label.lower())
+    pg.click('[aria-label="Screen edge"] >> text=Top'); pg.click('[aria-label="Close settings window"]'); pg.wait_for_timeout(300); open_panel(pg); seed(pg); pg.wait_for_timeout(400)
+    check("after choosing Top in settings the real panel is horizontal", layout(pg)["orient"] == "horizontal" and layout(pg)["dir"] == "row"); c.close()
+    # live: dragging the open panel to another edge re-orients it immediately
+    c, pg = fresh(br, w=1280, h=720, settings={}); open_panel(pg); seed(pg); pg.wait_for_timeout(300); g = rect(pg, ".p-brand")
+    check("starts vertical on the right edge", layout(pg)["orient"] == "vertical")
+    pg.mouse.move(g["x"] + 20, g["y"] + 10); pg.mouse.down(); pg.mouse.move(640, 715, steps=10); pg.mouse.up(); pg.wait_for_timeout(600)
+    L = layout(pg); check("dragging the open panel to the bottom switches it to a horizontal row with no restart", L["orient"] == "horizontal" and L["dir"] == "row" and inside(rect(pg, ".panel"), 1280, 720), (L["orient"], L["dir"]))
+    g = rect(pg, ".p-brand"); pg.mouse.move(g["x"] + 20, g["y"] + 10); pg.mouse.down(); pg.mouse.move(1277, 150, steps=10); pg.mouse.up(); pg.wait_for_timeout(600)
+    L = layout(pg); check("and back to a vertical column on the right edge", L["orient"] == "vertical" and L["sw"] <= L["cw"] + 1 and abs(rect(pg, ".panel")["h"] - 540) < 1, (L["orient"], L["dir"])); c.close()
+    # horizontal fits small and short screens without clipping
+    for name, w, hgt in [("1280x720", 1280, 720), ("800x420", 800, 420), ("360x640", 360, 640), ("1080x1920", 1080, 1920)]:
+        for scheme in ("dark", "light"):
+            c2, pg = fresh(br, w=w, h=hgt, scheme=scheme, settings={"edge": "bottom", "panelWidth": 480, "panelHeight": 700}); open_panel(pg); seed(pg); pg.wait_for_timeout(300); pr = rect(pg, ".panel"); L = layout(pg)
+            clipped = pg.evaluate("(()=>{const p=document.querySelector('.panel').getBoundingClientRect(); return [...document.querySelectorAll('.p-head *, .p-foot *')].filter(e=>{const r=e.getBoundingClientRect(); return r.width>0&&(r.right>p.right+1||r.left<p.left-1||r.bottom>p.bottom+1||r.top<p.top-1)}).length})()")
+            check(f"[{scheme}] horizontal {name}: on screen, no clipping, no vertical overflow", inside(pr, w, hgt) and clipped == 0 and L["sh"] <= L["ch"] + 1, (pr, clipped, L["sh"], L["ch"]))
+            if name == "1280x720": pg.screenshot(path=f"{OUT}/orientation-horizontal-{scheme}.png")
+            c2.close()
+
     # ---- the panel never exceeds the screen: many viewports, both themes ----
     for scheme in ("dark", "light"):
         for name, w, hgt, dpr in [("1280x720", 1280, 720, 1), ("1366x768", 1366, 768, 1), ("1920x1080", 1920, 1080, 1), ("3840x2160@250", 1536, 864, 2.5), ("1080x1920", 1080, 1920, 1), ("small 360x640", 360, 640, 1), ("short 800x420", 800, 420, 1)]:
